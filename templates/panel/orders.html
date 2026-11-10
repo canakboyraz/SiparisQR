@@ -5,6 +5,15 @@
   <h1>Siparişler</h1>
   <span class="pn-head-r"><a class="btn-sm" href="{{ url_for('panel.reports') }}">📊 Rapor</a><span class="pn-live" title="Sayfa kendiliğinden yenilenir"><i></i>Canlı</span></span>
 </div>
+{% if show_steps %}
+<section class="card steps-card" id="kurulum">
+  <div class="pay-head"><h2>Kurulum · {{ steps|selectattr(1)|list|length }}/{{ steps|length }}</h2>
+    <button type="button" class="btn-link" onclick="document.cookie='kurulum-gizle=1;path=/;max-age=31536000';document.getElementById('kurulum').remove()">Gizle</button></div>
+  <ol class="setup">
+    {% for label, done, link in steps %}<li class="{{ 'is-done' if done }}"><a href="{{ link }}">{{ label }}</a></li>{% endfor %}
+  </ol>
+</section>
+{% endif %}
 <nav class="pn-seg" aria-label="Sipariş durumu">
   {% for key, (label, _) in tabs.items() %}
   <a href="{{ url_for('panel.orders', tab=key) }}" class="{{ 'is-on' if tab == key }}">{{ label }}{% if key != 'done' and counts[key] %} <em>{{ counts[key] }}</em>{% endif %}</a>

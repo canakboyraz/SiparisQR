@@ -39,7 +39,10 @@ def index():
         "(SELECT COUNT(*) FROM orders o WHERE o.business_id = b.id AND o.status = 'pending') AS pending, "
         "(SELECT email FROM users u WHERE u.business_id = b.id ORDER BY u.id LIMIT 1) AS owner_email "
         "FROM businesses b ORDER BY b.id DESC")
-    return render_template("admin/index.html", rows=rows)
+    for r in rows:
+        r["sub"] = core.subscription(r)
+    demo = db.one("SELECT id FROM businesses WHERE is_demo = 1 ORDER BY id LIMIT 1")
+    return render_template("admin/index.html", rows=rows, demo=demo, now=core.now())
 
 
 @bp.route("/new", methods=["GET", "POST"])
@@ -106,12 +109,38 @@ def edit(biz_id):
                 db.commit()
                 flash("Kaydedildi.", "ok")
                 return redirect(url_for("admin.edit", biz_id=biz_id))
+        elif action == "plan":
+            kind = f.get("plan")
+            if kind == "monthly":
+                core.extend_subscription(b, "monthly", 30)
+                flash("1 ay eklendi.", "ok")
+            elif kind == "yearly":
+                core.extend_subscription(b, "yearly", 365)
+                flash("1 yıl eklendi.", "ok")
+            elif kind == "trial":
+                core.extend_subscription(b, "trial", 7)
+                flash("Deneme süresi 7 gün uzatıldı.", "ok")
+            elif kind == "free":
+                db.update("businesses", biz_id, {"plan": "free"}); db.commit()
+                flash("Süresiz ücretsiz yapıldı.", "ok")
+            elif kind == "date":
+                from datetime import datetime
+                try:
+                    d = datetime.strptime(f.get("until") or "", "%Y-%m-%d")
+                    db.update("businesses", biz_id, {"paid_until": d.strftime("%Y-%m-%dT20:59:59Z"),
+                                                     "plan": f.get("plan_kind") if f.get("plan_kind") in core.PLANS else b["plan"]})
+                    db.commit()
+                    flash("Bitiş tarihi güncellendi.", "ok")
+                except ValueError:
+                    flash("Tarihi seç.", "error")
+            return redirect(url_for("admin.edit", biz_id=biz_id) + "#abonelik")
         elif action == "reset" and owner:
             new_password = secrets.token_urlsafe(7)
             db.update("users", owner["id"], {"password_hash": generate_password_hash(new_password)})
             db.commit()
         b = db.one("SELECT * FROM businesses WHERE id = ?", (biz_id,))
-    return render_template("admin/edit.html", b=b, owner=owner, new_password=new_password)
+    return render_template("admin/edit.html", b=b, owner=owner, new_password=new_password, sub=core.subscription(b),
+                           PLANS=core.PLANS)
 
 
 @bp.post("/<int:biz_id>/enter")
@@ -128,3 +157,41 @@ def enter(biz_id):
 def exit_panel():
     biz_id = session.pop("as_biz", None)
     return redirect(url_for("admin.edit", biz_id=biz_id) if biz_id else url_for("admin.index"))
+
+
+@bp.route("/settings", methods=["GET", "POST"])
+@admin_required
+def platform():
+    if request.method == "POST":
+        f = request.form
+        values = {k: (f.get(k) or "").strip()[:200] for k in core.PLATFORM_DEFAULTS}
+        try:
+            values["trial_days"] = str(max(0, min(90, int(values["trial_days"] or 14))))
+            for k in ("price_monthly", "price_yearly"):
+                values[k] = str(core.money(values[k] or "0")).replace(".00", "")
+        except ValueError:
+            flash("Gün ve fiyatları rakamla yaz.", "error")
+            return redirect(url_for("admin.platform"))
+        values["pay_iban"] = core.normalize_iban(values["pay_iban"])
+        if values["pay_iban"] and not core.valid_iban(values["pay_iban"]):
+            flash("IBAN geçersiz görünüyor.", "error")
+            return redirect(url_for("admin.platform"))
+        values["contact_whatsapp"] = core.normalize_phone(values["contact_whatsapp"])
+        core.save_platform_settings(values)
+        flash("Platform ayarları kaydedildi.", "ok")
+        return redirect(url_for("admin.platform"))
+    return render_template("admin/settings.html", s=core.platform_settings())
+
+
+@bp.post("/demo")
+@admin_required
+def make_demo():
+    import demo
+    existing = db.one("SELECT id FROM businesses WHERE is_demo = 1 ORDER BY id LIMIT 1")
+    if existing:
+        flash("Demo mağaza zaten var.", "ok")
+        return redirect(url_for("admin.edit", biz_id=existing["id"]))
+    slug = "ornek-magaza" if not db.one("SELECT id FROM businesses WHERE slug = 'ornek-magaza'") else "ornek-magaza-2"
+    bid = demo.create_demo(slug=slug, name="Ege Zeytin (Örnek)", owner_email=None, is_demo=1)
+    flash("Demo mağaza hazır. Satış görüşmesinde bu linki aç.", "ok")
+    return redirect(url_for("admin.edit", biz_id=bid))

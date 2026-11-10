@@ -687,7 +687,7 @@ def subscription_ok(biz):
 
 def trial_days():
     try:
-        return int(db.get_setting("trial_days", "14"))
+        return int(db.get_setting("p_trial_days", db.get_setting("trial_days", "14")))
     except ValueError:
         return 14
 
@@ -763,3 +763,39 @@ def customer_messages(biz, order, url, pay=None, rewards=()):
     for r in rewards:
         out.append(("Ödül müjdesi", f"{hi}\n🎁 Tebrikler! {r['text']} kazandın. Bir sonraki siparişinde seninle olacak."))
     return out
+
+
+# ── Platform ayarları (yönetici) ────────────────────────────────────────────
+
+PLATFORM_DEFAULTS = {"trial_days": "14", "price_monthly": "399", "price_yearly": "3990", "pay_iban": "",
+                     "pay_holder": "", "pay_bank": "", "contact_whatsapp": "", "contact_email": ""}
+
+
+def platform_settings():
+    return {k: db.get_setting("p_" + k, db.get_setting(k, v) if k == "trial_days" else v)
+            for k, v in PLATFORM_DEFAULTS.items()}
+
+
+def save_platform_settings(values):
+    for k, v in values.items():
+        if k in PLATFORM_DEFAULTS:
+            db.set_setting("p_" + k, str(v))
+            if k == "trial_days":
+                db.set_setting("trial_days", str(v))
+    db.commit()
+
+
+def setup_steps(biz):
+    """Yeni işletme için kurulum kontrol listesi: [(etiket, tamam_mı, link)]."""
+    n_products = db.one("SELECT COUNT(*) AS n FROM products WHERE business_id = ?", (biz["id"],))["n"]
+    n_push = db.one("SELECT COUNT(*) AS n FROM push_subscriptions WHERE business_id = ?", (biz["id"],))["n"]
+    n_orders = db.one("SELECT COUNT(*) AS n FROM orders WHERE business_id = ?", (biz["id"],))["n"]
+    pay_ok = (biz["pay_iban"] and biz["iban"]) or biz["pay_cash"] or card_ready(biz)
+    camp = biz["reward_active"] or biz["first_discount_active"] or biz["referral_active"] or biz["birthday_active"]
+    return [
+        ("İlk ürününü ekle", int(n_products) > 0, "/panel/products/new"),
+        ("IBAN, telefon ve teslimat ayarları", bool(pay_ok and (biz["phone"] or biz["whatsapp"])), "/panel/settings"),
+        ("Bir kampanya aç (ör. her 6 siparişe hediye)", bool(camp), "/panel/campaign"),
+        ("Telefonunda bildirimleri aç", int(n_push) > 0, "/panel/notifications"),
+        ("QR afişini yazdır, linki Instagram'a ekle", int(n_orders) > 0, "/panel/qr"),
+    ]

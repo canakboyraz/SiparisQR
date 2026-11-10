@@ -1,0 +1,31 @@
+{% extends "panel/layout.html" %}
+{% block ptitle %}Abonelik{% endblock %}
+{% block content %}
+<a class="pn-back" href="{{ url_for('panel.settings') }}">← Ayarlar</a>
+<h1>Abonelik</h1>
+<section class="card sub-card is-{{ 'bad' if sub.expired else ('warn' if sub.warn else 'ok') }}">
+  <span class="pill">{{ sub.label }}</span>
+  {% if sub.plan == 'free' %}<h2>Süresiz ücretsiz</h2>
+  {% elif sub.expired %}<h2>Süren doldu</h2><p>Mağazan şu an sipariş almıyor. Ödeme yapınca hemen açılır; tüm ürünlerin ve siparişlerin yerinde.</p>
+  {% else %}<h2>{{ sub.days_left }} gün kaldı</h2><p>Bitiş: {{ local_time(sub.until, '%d.%m.%Y') }}</p>{% endif %}
+</section>
+{% if sub.plan != 'free' %}
+<section class="card">
+  <h2>Planlar</h2>
+  <div class="plans">
+    <div><b>Aylık</b><strong>{{ ps.price_monthly }} TL</strong><small>/ ay</small></div>
+    <div class="is-best"><b>Yıllık</b><strong>{{ ps.price_yearly }} TL</strong><small>/ yıl · 2 ay bedava</small></div>
+  </div>
+  <p class="muted">Tüm özellikler her planda: sınırsız ürün ve sipariş, bildirim, kampanyalar, rapor, kendi domainin. Sipariş başına komisyon yok.</p>
+  {% if ps.pay_iban %}
+  <div class="iban-box">
+    <small>{{ ps.pay_bank }}{% if ps.pay_bank %} · {% endif %}{{ ps.pay_holder }}</small>
+    <code>{{ pretty_iban(ps.pay_iban) }}</code>
+    <button type="button" class="btn-ghost" data-copy="{{ ps.pay_iban }}">IBAN'ı kopyala</button>
+  </div>
+  <p class="muted">Açıklamaya <b>{{ biz.slug }}</b> yaz. Ödeme görülünce süren uzatılır.</p>
+  {% endif %}
+  {% if wa %}<a class="btn-wa" href="{{ wa }}" target="_blank" rel="noopener">WhatsApp'tan yaz</a>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

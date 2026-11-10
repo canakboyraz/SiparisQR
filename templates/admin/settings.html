@@ -1,0 +1,27 @@
+{% extends "admin/layout.html" %}
+{% block content %}
+<a class="pn-back" href="{{ url_for('admin.index') }}">← İşletmeler</a>
+<h1>Platform ayarları</h1>
+<form method="post" class="card form">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <h2>Abonelik</h2>
+  <div class="row3">
+    <label class="fld"><span>Deneme süresi (gün)</span><input name="trial_days" type="number" min="0" max="90" value="{{ s.trial_days }}"></label>
+    <label class="fld"><span>Aylık fiyat (TL)</span><input name="price_monthly" inputmode="decimal" value="{{ s.price_monthly }}"></label>
+    <label class="fld"><span>Yıllık fiyat (TL)</span><input name="price_yearly" inputmode="decimal" value="{{ s.price_yearly }}"></label>
+  </div>
+  <h2>Ödeme alacağın hesap</h2>
+  <label class="fld"><span>IBAN</span><input name="pay_iban" value="{{ pretty_iban(s.pay_iban) if s.pay_iban else '' }}" placeholder="TR.."></label>
+  <div class="row2">
+    <label class="fld"><span>Hesap sahibi</span><input name="pay_holder" value="{{ s.pay_holder }}"></label>
+    <label class="fld"><span>Banka</span><input name="pay_bank" value="{{ s.pay_bank }}"></label>
+  </div>
+  <h2>İletişim</h2>
+  <div class="row2">
+    <label class="fld"><span>WhatsApp</span><input name="contact_whatsapp" type="tel" value="{{ ('0' ~ s.contact_whatsapp) if s.contact_whatsapp else '' }}" placeholder="05XX XXX XX XX"></label>
+    <label class="fld"><span>E-posta</span><input name="contact_email" type="email" value="{{ s.contact_email }}"></label>
+  </div>
+  <p class="muted">Bunlar işletmelerin "Abonelik" sayfasında ve tanıtım sayfasında görünür.</p>
+  <button class="btn-primary" type="submit">Kaydet</button>
+</form>
+{% endblock %}

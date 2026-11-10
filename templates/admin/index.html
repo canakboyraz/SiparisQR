@@ -1,13 +1,20 @@
 {% extends "admin/layout.html" %}
 {% block content %}
-<div class="pn-head"><h1>İşletmeler</h1><a class="btn-primary" href="{{ url_for('admin.new') }}">+ Yeni işletme</a></div>
+<div class="pn-head"><h1>İşletmeler</h1>
+  <span class="pn-head-r"><a class="btn-sm" href="{{ url_for('admin.platform') }}">⚙️ Ayarlar</a><a class="btn-primary" href="{{ url_for('admin.new') }}">+ Yeni işletme</a></span></div>
+<section class="card demo-card">
+  {% if demo %}<span>Satış görüşmesi için örnek mağaza hazır.</span><span class="act-row"><a class="btn-sm" href="{{ url_for('admin.edit', biz_id=demo.id) }}">Demo mağaza</a></span>
+  {% else %}<span>Satış görüşmesinde göstermek için örnek ürünlü bir mağaza oluştur.</span>
+  <form method="post" action="{{ url_for('admin.make_demo') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="btn-sm" type="submit">Demo mağaza oluştur</button></form>{% endif %}
+</section>
 {% if not rows %}<div class="pn-empty"><p>Henüz işletme yok. İlk müşterini ekle.</p></div>{% endif %}
 <ul class="ol">
   {% for b in rows %}
   <li><a class="ol-row" href="{{ url_for('admin.edit', biz_id=b.id) }}">
-    <div class="ol-main"><b>{{ b.name }}{% if not b.active %} · <span class="pill is-cancelled">kapalı</span>{% endif %}</b>
+    <div class="ol-main"><b>{{ b.name }}{% if not b.active %} · <span class="pill is-cancelled">kapalı</span>{% endif %}{% if b.is_demo %} · <span class="pill">demo</span>{% endif %}{% if b.self_signup and b.orders == 0 %} · <span class="pill is-pending">yeni kayıt</span>{% endif %}</b>
       <span>{{ b.custom_domain or ('/s/' ~ b.slug) }}</span><small>{{ b.owner_email }}</small></div>
-    <div class="ol-side"><b>{{ b.orders }} sipariş</b>{% if b.pending %}<span class="pill is-pending">{{ b.pending }} bekliyor</span>{% endif %}</div>
+    <div class="ol-side"><b>{{ b.orders }} sipariş</b>
+      <span class="pill {{ 'pay-none' if b.sub.expired else ('pay-partial' if b.sub.warn else 'pay-paid') }}">{{ b.sub.label }}{% if b.sub.days_left is not none %} · {{ b.sub.days_left if b.sub.days_left >= 0 else 'bitti' }}{% if b.sub.days_left >= 0 %} gün{% endif %}{% endif %}</span>{% if b.pending %}<span class="pill is-pending">{{ b.pending }} bekliyor</span>{% endif %}</div>
   </a></li>
   {% endfor %}
 </ul>

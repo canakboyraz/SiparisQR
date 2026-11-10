@@ -24,5 +24,21 @@
     <button class="btn-ghost" type="submit">Şifreyi sıfırla</button></form>
   {% endif %}
 </section>
+<section class="card" id="abonelik">
+  <h2>Abonelik · <span class="pill {{ 'pay-none' if sub.expired else ('pay-partial' if sub.warn else 'pay-paid') }}">{{ sub.label }}</span></h2>
+  <p>{% if sub.plan == 'free' %}Süresiz ücretsiz.{% else %}Bitiş: <b>{{ local_time(sub.until, '%d.%m.%Y') }}</b> · {{ sub.days_left if sub.days_left >= 0 else 'süresi doldu' }}{% if sub.days_left >= 0 %} gün kaldı{% endif %}{% endif %}</p>
+  <div class="act-row">
+    {% for k, label in [('monthly', '+1 ay (aylık ödedi)'), ('yearly', '+1 yıl (yıllık ödedi)'), ('trial', '+7 gün deneme'), ('free', 'Süresiz ücretsiz')] %}
+    <form method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="action" value="plan"><input type="hidden" name="plan" value="{{ k }}">
+      <button class="btn-sm" type="submit">{{ label }}</button></form>
+    {% endfor %}
+  </div>
+  <form method="post" class="inline-form" style="margin-top:12px">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="action" value="plan"><input type="hidden" name="plan" value="date">
+    <select name="plan_kind" aria-label="Plan">{% for k, v in PLANS.items() if k != 'free' %}<option value="{{ k }}" {% if sub.plan == k %}selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+    <input type="date" name="until" value="{{ local_time(sub.until, '%Y-%m-%d') if sub.until else '' }}" aria-label="Bitiş tarihi">
+    <button class="btn-sm" type="submit">Tarihi ayarla</button>
+  </form>
+</section>
 {% if b.custom_domain %}{% include "admin/_dns.html" %}{% endif %}
 {% endblock %}

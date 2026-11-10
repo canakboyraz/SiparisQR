@@ -34,6 +34,11 @@
   <form method="post" action="{{ url_for('admin.exit_panel') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="btn-sm" type="submit">Yönetime dön</button></form>
 </div>
 {% endif %}
+{% if sub and sub.plan != 'free' and (sub.expired or sub.warn) %}
+<a class="pn-sub {{ 'is-bad' if sub.expired else '' }}" href="{{ url_for('panel.subscription') }}">
+  {% if sub.expired %}Abonelik süren doldu, mağazan sipariş almıyor. Uzatmak için dokun →{% else %}{{ sub.label }} süren {{ sub.days_left }} gün sonra bitiyor. Abonelik →{% endif %}
+</a>
+{% endif %}
 <div class="pn-push" id="pn-push" {% if g.impersonating %}data-off{% endif %} hidden>
   <span>Yeni siparişlerde bu cihaza bildirim gelsin mi?</span>
   <a class="btn-sm" href="{{ url_for('panel.notifications') }}">Bildirimleri aç</a>

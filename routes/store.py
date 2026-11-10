@@ -54,7 +54,9 @@ def _store_page(biz):
 def home():
     if g.host_biz:
         return _store_page(_biz())
-    return render_template("landing.html")
+    from routes.auth import signup_open
+    demo = db.one("SELECT slug FROM businesses WHERE is_demo = 1 AND active = 1 ORDER BY id LIMIT 1")
+    return render_template("landing.html", ps=core.platform_settings(), signup=signup_open(), demo=demo)
 
 
 @bp.get("/s/<slug>/")

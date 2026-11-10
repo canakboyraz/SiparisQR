@@ -142,9 +142,9 @@
 
       <fieldset class="seg" id="st-pay">
         <legend>Ödeme</legend>
-        {% if biz.pay_cash %}<label><input type="radio" name="payment" value="cash" {% if not biz.pay_iban %}checked{% endif %}><span>Nakit<small>teslimde</small></span></label>{% endif %}
-        {% if biz.pay_iban %}<label><input type="radio" name="payment" value="iban" {% if not biz.pay_cash %}checked{% endif %}><span>IBAN<small>havale / EFT</small></span></label>{% endif %}
-        {% if 'card' in pay_options %}<label><input type="radio" name="payment" value="card" {% if pay_options|length == 1 %}checked{% endif %}><span>Kart<small>online öde</small></span></label>{% endif %}
+        {% if biz.pay_cash %}<label><input type="radio" name="payment" value="cash" checked><span>Nakit<small>teslimde</small></span></label>{% endif %}
+        {% if biz.pay_iban %}<label><input type="radio" name="payment" value="iban" {% if pay_options[0] == 'iban' %}checked{% endif %}><span>IBAN<small>havale / EFT</small></span></label>{% endif %}
+        {% if 'card' in pay_options %}<label><input type="radio" name="payment" value="card" {% if pay_options[0] == 'card' %}checked{% endif %}><span>Kart<small>online öde</small></span></label>{% endif %}
       </fieldset>
       <label class="fld"><span>Not <small>(isteğe bağlı)</small></span><textarea name="note" rows="2" maxlength="400" placeholder="ör. Zile basmayın, arayın"></textarea></label>
 

@@ -36,6 +36,7 @@ def nav():
         if int(o["paid_cents"] or 0) < core.cents(o["total"]):
             unpaid += 1
     return {"nav_pending": _counts(biz["id"])["pending"], "nav_unpaid": unpaid, "biz": biz, "pay_state": core.payment_state,
+            "sub": core.subscription(biz),
             "PAY_METHODS": core.PAY_METHODS, "from_cents": core.from_cents}
 
 
@@ -61,7 +62,10 @@ def orders():
     has_reward = {r["customer_id"] for r in db.query(
         "SELECT DISTINCT customer_id FROM rewards WHERE business_id = ? AND status = 'earned'", (g.biz["id"],))}
     latest = db.one("SELECT MAX(id) AS m FROM orders WHERE business_id = ?", (g.biz["id"],))
-    return render_template("panel/orders.html", active="orders", tab=tab, tabs=TABS, rows=rows,
+    steps = core.setup_steps(g.biz)
+    show_steps = not all(done for _, done, _ in steps) and not request.cookies.get("kurulum-gizle")
+    return render_template("panel/orders.html", active="orders", tab=tab, tabs=TABS, rows=rows, steps=steps,
+                           show_steps=show_steps,
                            counts=_counts(g.biz["id"]), has_reward=has_reward, latest=int(latest["m"] or 0))
 
 
@@ -909,3 +913,14 @@ def zones():
         db.rollback()
         flash(str(e) if "geçersiz" not in str(e) else "Ücretleri rakamla yaz (ör. 50).", "error")
     return redirect(url_for("panel.settings") + "#bolgeler")
+
+
+
+@bp.get("/subscription")
+@login_required
+def subscription():
+    ps = core.platform_settings()
+    wa = None
+    if ps["contact_whatsapp"]:
+        wa = core.wa_link(ps["contact_whatsapp"], f"Merhaba, {g.biz['name']} ({g.biz['slug']}) aboneliğim hakkında yazıyorum.")
+    return render_template("panel/subscription.html", active="settings", ps=ps, wa=wa)

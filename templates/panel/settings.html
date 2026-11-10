@@ -87,5 +87,5 @@
   </form>
   <p class="muted"><small>Sütunlar: bölge adı · teslimat ücreti · bu tutarın üstü ücretsiz (0 = yok)</small></p>
 </section>
-<p><a href="{{ url_for('auth.password') }}">Şifremi değiştir</a></p>
+<p><a href="{{ url_for('panel.subscription') }}">Abonelik ({{ sub.label }}{% if sub.days_left is not none and sub.days_left >= 0 %}, {{ sub.days_left }} gün{% endif %})</a> · <a href="{{ url_for('auth.password') }}">Şifremi değiştir</a></p>
 {% endblock %}

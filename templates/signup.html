@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Ücretsiz dene · {{ platform_name }}{% endblock %}
+{% block body_class %}plain{% endblock %}
+{% block body %}
+<main class="auth">
+  <h1>{{ platform_name }}</h1>
+  <p>İşletmeni aç, ücretsiz denemeye başla. Kart bilgisi istemiyoruz.</p>
+  {% include "_flash.html" %}
+  <form method="post" class="card" autocomplete="on">
+    <label class="fld"><span>İşletme adı</span><input name="name" value="{{ form.name }}" maxlength="80" required placeholder="ör. Ege Zeytin"></label>
+    <label class="fld"><span>Adın soyadın</span><input name="owner_name" value="{{ form.owner_name }}" maxlength="80" autocomplete="name" required></label>
+    <label class="fld"><span>E-posta</span><input type="email" name="email" value="{{ form.email }}" autocomplete="email" required></label>
+    <label class="fld"><span>Cep telefonu</span><input type="tel" name="phone" value="{{ form.phone }}" inputmode="tel" autocomplete="tel" placeholder="05XX XXX XX XX" required></label>
+    <label class="fld"><span>Şifre</span><input type="password" name="password" minlength="8" autocomplete="new-password" required></label>
+    <input type="text" name="website" tabindex="-1" autocomplete="off" class="hp" aria-hidden="true">
+    <label class="check"><input type="checkbox" name="kvkk" value="1" required> Kullanım koşullarını ve kişisel verilerin işlenmesini kabul ediyorum.</label>
+    <button class="btn-primary" type="submit">Ücretsiz denemeyi başlat</button>
+  </form>
+  <p class="muted">Hesabın var mı? <a href="/login">Giriş yap</a></p>
+</main>
+{% endblock %}

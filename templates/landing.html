@@ -12,6 +12,17 @@
     <li><b>Sadakat kampanyası</b> "Her 6 siparişe 1 hediye" gibi kuralını sen belirlersin.</li>
     <li><b>Kendi domainin</b> Mağazan kendi adresinde açılır.</li>
   </ul>
-  <a class="btn-primary" href="/login">İşletme girişi</a>
+  {% if ps.price_monthly %}
+  <div class="plans land-plans">
+    <div><b>Aylık</b><strong>{{ ps.price_monthly }} TL</strong><small>/ ay</small></div>
+    <div class="is-best"><b>Yıllık</b><strong>{{ ps.price_yearly }} TL</strong><small>/ yıl</small></div>
+  </div>
+  <p class="muted">Sipariş başına komisyon yok · {{ ps.trial_days }} gün ücretsiz deneme · kart bilgisi istenmez</p>
+  {% endif %}
+  <div class="act-row land-cta">
+    {% if signup %}<a class="btn-primary btn-big" href="/kayit">Ücretsiz dene</a>{% endif %}
+    {% if demo %}<a class="btn-ghost btn-big" href="/s/{{ demo.slug }}/">Örnek mağazayı gör</a>{% endif %}
+  </div>
+  <p class="muted">Hesabın var mı? <a href="/login">İşletme girişi</a>{% if ps.contact_whatsapp %} · <a href="https://wa.me/90{{ ps.contact_whatsapp }}" rel="noopener">WhatsApp'tan sor</a>{% endif %}</p>
 </main>
 {% endblock %}

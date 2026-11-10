@@ -759,3 +759,93 @@ def test_share_guide_and_instagram(app):
     c, biz, _, t = _owner(app)
     html = c.get("/panel/qr").get_data(as_text=True)
     assert "Instagram profil linki" in html and "Google İşletme Profili" in html
+
+
+# ── 4. aşama ────────────────────────────────────────────────────────────────
+
+def test_subscription_expiry_and_extend(app):
+    c, biz, (p1, _, _), t = _owner(app)
+    b = db.one("SELECT * FROM businesses WHERE id = ?", (biz["id"],))
+    sub = core.subscription(b)
+    assert b["plan"] == "trial" and 13 <= sub["days_left"] <= 14 and sub["ok"]
+    # 4 gün kaldı -> uyarı
+    db.update("businesses", biz["id"], {"paid_until": (core.datetime.now(core.timezone.utc) + core.timedelta(days=4)).strftime("%Y-%m-%dT%H:%M:%SZ")}); db.commit()
+    assert "gün sonra bitiyor" in c.get("/panel/orders").get_data(as_text=True)
+    # 3 gün önce bitti (2 gün tolerans aşıldı) -> mağaza kapanır
+    db.update("businesses", biz["id"], {"paid_until": (core.datetime.now(core.timezone.utc) - core.timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%SZ")}); db.commit()
+    assert "şu an sipariş almıyor" in c.get("/s/ege-zeytin/").get_data(as_text=True)
+    r = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}])
+    assert r.status_code == 400
+    assert "süren doldu" in c.get("/panel/orders").get_data(as_text=True)
+    assert c.get("/panel/products").status_code == 200       # veriler erişilebilir kalır
+    assert c.get("/panel/subscription").status_code == 200
+    # yönetici 1 ay ekler -> bugünden itibaren 30 gün
+    a = app.test_client(); login(a, "admin@x.com", "adminpass123")
+    ta = csrf(a, "/admin/")
+    a.post(f"/admin/{biz['id']}", data={"csrf": ta, "action": "plan", "plan": "monthly"})
+    b = db.one("SELECT * FROM businesses WHERE id = ?", (biz["id"],))
+    assert b["plan"] == "monthly" and 29 <= core.subscription(b)["days_left"] <= 30
+    assert order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}]).status_code == 200
+    a.post(f"/admin/{biz['id']}", data={"csrf": ta, "action": "plan", "plan": "yearly"})
+    assert 393 <= core.subscription(db.one("SELECT * FROM businesses WHERE id = ?", (biz["id"],)))["days_left"] <= 395
+    a.post(f"/admin/{biz['id']}", data={"csrf": ta, "action": "plan", "plan": "free"})
+    assert core.subscription(db.one("SELECT * FROM businesses WHERE id = ?", (biz["id"],)))["ok"]
+
+
+def test_platform_settings_and_landing(app):
+    a = app.test_client(); login(a, "admin@x.com", "adminpass123")
+    t = csrf(a, "/admin/settings")
+    a.post("/admin/settings", data={"csrf": t, "trial_days": "30", "price_monthly": "499", "price_yearly": "4990",
+                                    "pay_iban": IBAN, "pay_holder": "Can A.", "pay_bank": "Banka", "contact_whatsapp": "0532 999 88 77"})
+    ps = core.platform_settings()
+    assert ps["trial_days"] == "30" and ps["price_monthly"] == "499" and ps["contact_whatsapp"] == "5329998877"
+    assert core.trial_days() == 30
+    html = app.test_client().get("/", headers={"Host": "platform.test"}).get_data(as_text=True)
+    assert "499 TL" in html and "30 gün ücretsiz" in html and "Ücretsiz dene" in html
+    # demo mağaza
+    a.post("/admin/demo", data={"csrf": t}, follow_redirects=True)
+    demo = db.one("SELECT * FROM businesses WHERE is_demo = 1")
+    assert demo and core.subscription(demo)["plan"] == "free"
+    assert "Örnek mağazayı gör" in app.test_client().get("/", headers={"Host": "platform.test"}).get_data(as_text=True)
+    page = app.test_client().get(f"/s/{demo['slug']}/").get_data(as_text=True)
+    assert "Gemlik Siyah Zeytin" in page and "500 g · 1 kg · 5 kg" in page
+    a.post("/admin/demo", data={"csrf": t})
+    assert db.one("SELECT COUNT(*) AS n FROM businesses WHERE is_demo = 1")["n"] == 1
+
+
+def test_self_signup(app):
+    c = app.test_client()
+    assert c.get("/kayit").status_code == 200
+    bad = c.post("/kayit", data={"name": "X", "owner_name": "", "email": "nope", "phone": "123", "password": "kisa"})
+    assert bad.status_code == 400
+    r = c.post("/kayit", data={"name": "Bal Evi Çiçek", "owner_name": "Mehmet Bal", "email": "Bal@Ornek.com",
+                               "phone": "0532 444 55 66", "password": "guclusifre1", "kvkk": "1"}, follow_redirects=True)
+    html = r.get_data(as_text=True)
+    assert "Hoş geldin" in html and "Kurulum" in html and "İlk ürününü ekle" in html
+    b = db.one("SELECT * FROM businesses WHERE slug = 'bal-evi-cicek'")
+    assert b and b["self_signup"] == 1 and b["plan"] == "trial" and b["phone"] == "5324445566"
+    u = db.one("SELECT * FROM users WHERE email = 'bal@ornek.com'")
+    assert u["business_id"] == b["id"] and not u["is_admin"]
+    # aynı e-posta tekrar kaydolamaz, aynı isim yeni kısa ad alır
+    c2 = app.test_client()
+    assert c2.post("/kayit", data={"name": "Bal Evi Çiçek", "owner_name": "Ali", "email": "bal@ornek.com",
+                                   "phone": "05324445566", "password": "guclusifre1", "kvkk": "1"}).status_code == 400
+    c2.post("/kayit", data={"name": "Bal Evi Çiçek", "owner_name": "Ali", "email": "ali@ornek.com",
+                            "phone": "05324445567", "password": "guclusifre1", "kvkk": "1"})
+    assert db.one("SELECT id FROM businesses WHERE slug = 'bal-evi-cicek-2'")
+    # bot tuzağı
+    assert app.test_client().post("/kayit", data={"name": "Bot", "website": "http://spam"}).status_code == 400
+    # yeni kayıt yönetici listesinde görünür
+    a = app.test_client(); login(a, "admin@x.com", "adminpass123")
+    assert "yeni kayıt" in a.get("/admin/").get_data(as_text=True)
+
+
+def test_signup_closed(app, monkeypatch):
+    monkeypatch.setenv("SIGNUP_OPEN", "0")
+    assert app.test_client().get("/kayit").status_code == 404
+
+
+def test_setup_steps_progress(app):
+    c, biz, _, t = _owner(app, phone="5321112233")
+    html = c.get("/panel/orders").get_data(as_text=True)
+    assert "Kurulum · 3/5" in html            # ürün, ayar, kampanya tamam; bildirim ve ilk sipariş yok
