@@ -81,6 +81,7 @@
   <footer class="st-foot">
     {% if biz.phone %}<a href="tel:+90{{ biz.phone }}">{{ pretty_phone(biz.phone) }}</a>{% endif %}
     {% if biz.whatsapp %}<a href="https://wa.me/90{{ biz.whatsapp }}" rel="noopener">WhatsApp</a>{% endif %}
+    {% if biz.instagram %}<a href="https://instagram.com/{{ biz.instagram }}" rel="noopener">Instagram</a>{% endif %}
     <a href="#" id="st-mine" hidden>Siparişlerim</a>
     <span>{{ platform_name }} ile sipariş</span>
   </footer>

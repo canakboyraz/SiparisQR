@@ -1,14 +1,14 @@
 {% extends "panel/layout.html" %}
 {% block ptitle %}Müşteriler{% endblock %}
 {% block content %}
-<div class="pn-head"><h1>Müşteriler</h1></div>
+<div class="pn-head"><h1>Müşteriler</h1><a class="btn-sm" href="{{ url_for('panel.broadcast') }}">📣 Duyuru gönder</a></div>
 <form class="inline-form search" method="get"><input name="q" value="{{ q }}" placeholder="Ad ya da telefon ara" aria-label="Ara"><button class="btn-sm" type="submit">Ara</button></form>
 {% if not rows %}<div class="pn-empty"><p>{{ 'Sonuç yok.' if q else 'İlk sipariş gelince müşterilerin burada listelenir.' }}</p></div>{% endif %}
 <ul class="cu">
   {% for c in rows %}
   <li class="card">
     <div class="cu-top">
-      <span><b>{{ c.name }}</b><small><a href="tel:+90{{ c.phone }}">{{ pretty_phone(c.phone) }}</a> · {{ c.orders }} sipariş · son {{ local_time(c.last_at, '%d.%m.%Y') }}</small></span>
+      <span><b>{{ c.name }}{% if c.marketing_ok %} <small title="Duyuru izni var">📣</small>{% endif %}</b><small><a href="tel:+90{{ c.phone }}">{{ pretty_phone(c.phone) }}</a> · {{ c.orders }} sipariş · son {{ local_time(c.last_at, '%d.%m.%Y') }}{% if c.birth_day %} · 🎂 {{ c.birth_day }}.{{ c.birth_month }}{% endif %}</small></span>
       {% if biz.reward_active %}<span class="cu-stamp" title="Kampanyada sayılan sipariş">{{ c.counted % every }}/{{ every }}</span>{% endif %}
     </div>
     {% for r in rewards.get(c.id, []) %}

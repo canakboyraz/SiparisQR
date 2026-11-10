@@ -616,3 +616,146 @@ def test_reorder_button(app):
     assert "Aynı siparişi tekrar ver" in html
     items = json.loads(re.search(r"data-items='([^']+)'", html).group(1))
     assert items == [{"id": p1, "variant": None, "qty": 3}]
+
+
+# ── 3. aşama ────────────────────────────────────────────────────────────────
+
+def test_first_order_discount(app):
+    c, biz, (p1, p2, _), t = _owner(app)
+    r = c.post("/panel/campaign", data={"csrf": t, "section": "first", "first_discount_active": "1",
+                                        "first_discount_type": "percent", "first_discount_value": "10"}, follow_redirects=True)
+    assert "İlk siparişine %10 indirim" in r.get_data(as_text=True)
+    assert "İlk siparişine %10 indirim" in c.get("/s/ege-zeytin/").get_data(as_text=True)
+    c2 = app.test_client()
+    o1 = core.get_order(order(c2, "/s/ege-zeytin", [{"id": p1, "qty": 2}]).get_json()["id"])   # 700 → −70 + 50
+    assert o1["discount"] == "70.00" and o1["total"] == "680.00" and "%10" in o1["discount_note"]
+    o2 = core.get_order(order(c2, "/s/ege-zeytin", [{"id": p1, "qty": 2}]).get_json()["id"])
+    assert o2["discount"] == "0.00"                         # aynı numara 2. sipariş
+    # reddedilen ilk sipariş sonrası yeni numara gibi davranır
+    c.post(f"/panel/orders/{o1['id']}/status", data={"csrf": t, "status": "rejected"})
+    c.post(f"/panel/orders/{o2['id']}/status", data={"csrf": t, "status": "rejected"})
+    o3 = core.get_order(order(c2, "/s/ege-zeytin", [{"id": p1, "qty": 1}]).get_json()["id"])
+    assert o3["discount"] == "35.00"
+    # tutar indirimi, ara toplamı aşamaz
+    c.post("/panel/campaign", data={"csrf": t, "section": "first", "first_discount_active": "1",
+                                    "first_discount_type": "amount", "first_discount_value": "500"})
+    o4 = core.get_order(order(c2, "/s/ege-zeytin", [{"id": p1, "qty": 1}], phone="05330000001").get_json()["id"])
+    assert o4["discount"] == "350.00" and o4["total"] == "50.00"
+    assert "en fazla %50" in c.post("/panel/campaign", data={"csrf": t, "section": "first", "first_discount_active": "1",
+        "first_discount_type": "percent", "first_discount_value": "80"}, follow_redirects=True).get_data(as_text=True)
+
+
+def test_referral(app):
+    c, biz, (p1, _, _), t = _owner(app)
+    c.post("/panel/campaign", data={"csrf": t, "section": "referral", "referral_active": "1", "referral_text": "250 g zeytin"})
+    a = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}]).get_json()
+    c.post(f"/panel/orders/{a['id']}/status", data={"csrf": t, "status": "approved"})
+    html = c.get(a["url"]).get_data(as_text=True)
+    assert "Arkadaşını davet et" in html
+    code = re.search(r"\?ref=([A-Z0-9]+)", html).group(1)
+    referrer = core.get_order(a["id"])["customer_id"]
+    # kendi kodu işe yaramaz
+    self_o = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}], ref=code).get_json()
+    assert core.get_order(self_o["id"])["referred_by"] is None
+    # arkadaş
+    b = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}], ref=code.lower(), phone="05441112233",
+              name="Zeynep Ak").get_json()
+    ob = core.get_order(b["id"])
+    assert ob["referred_by"] == referrer
+    page = c.post(f"/panel/orders/{b['id']}/status", data={"csrf": t, "status": "approved"},
+                  follow_redirects=True).get_data(as_text=True)
+    assert "250 g zeytin" in page
+    assert [r["kind"] for r in core.pending_rewards(ob["customer_id"])] == ["referral"]
+    rr = core.pending_rewards(referrer)
+    assert len(rr) == 1 and "Zeynep" in rr[0]["text"]
+    # aynı arkadaş ikinci kez ödül kazandırmaz
+    b2 = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}], ref=code, phone="05441112233", name="Zeynep Ak").get_json()
+    assert core.get_order(b2["id"])["referred_by"] is None
+
+
+def test_birthday_gift(app):
+    from datetime import datetime, timedelta
+    c, biz, (p1, _, _), t = _owner(app)
+    c.post("/panel/campaign", data={"csrf": t, "section": "birthday", "birthday_active": "1", "birthday_text": "Zeytin ezmesi"})
+    assert "Doğum günün" in c.get("/s/ege-zeytin/").get_data(as_text=True)
+    soon = datetime.now(core.TZ).date() + timedelta(days=3)
+    far = datetime.now(core.TZ).date() + timedelta(days=60)
+    a = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}], birth_day=soon.day, birth_month=soon.month).get_json()
+    b = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}], phone="05449998877",
+              birth_day=far.day, birth_month=far.month).get_json()
+    for x in (a, b):
+        c.post(f"/panel/orders/{x['id']}/status", data={"csrf": t, "status": "approved"})
+    ca, cb = core.get_order(a["id"])["customer_id"], core.get_order(b["id"])["customer_id"]
+    assert [r["kind"] for r in core.pending_rewards(ca)] == ["birthday"]
+    assert core.pending_rewards(cb) == []
+    # aynı yıl ikinci kez verilmez
+    a2 = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}]).get_json()
+    c.post(f"/panel/orders/{a2['id']}/status", data={"csrf": t, "status": "approved"})
+    assert len(core.pending_rewards(ca)) == 1
+
+
+def test_broadcast(app):
+    c, biz, (p1, _, _), t = _owner(app)
+    order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}], marketing_ok=True)
+    order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}], phone="05441112233", name="İzinsiz Kişi")
+    html = c.get("/panel/broadcast").get_data(as_text=True)
+    assert "Ayşe Yılmaz" in html and "İzinsiz Kişi" not in html
+    r = c.post("/panel/broadcast", data={"csrf": t, "message": "Merhaba {ad}, yeni hasat geldi: {link}"}, follow_redirects=True)
+    html = r.get_data(as_text=True)
+    from urllib.parse import unquote
+    link = re.search(r'href="(https://wa\.me/905321112233\?text=[^"]+)"', html).group(1)
+    text = unquote(link.split("text=")[1])
+    assert text.startswith("Merhaba Ayşe, yeni hasat geldi: ") and "/s/ege-zeytin/" in text and "İPTAL" in text
+    cid = db.one("SELECT id FROM customers WHERE phone = '5321112233'")["id"]
+    c.post("/panel/broadcast", data={"csrf": t, "action": "optout", "customer_id": cid})
+    assert "Ayşe Yılmaz" not in c.get("/panel/broadcast").get_data(as_text=True)
+
+
+def test_card_payment_flow(app, monkeypatch):
+    import paytr
+    c, biz, (p1, _, _), t = _owner(app, pay_cash=1)
+    # Kart kapalıyken seçilemez
+    assert order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}], payment="card").status_code == 400
+    form = {"csrf": t, "name": "Ege Zeytin", "pay_cash": "1", "pay_iban": "1", "iban": IBAN, "iban_holder": "Ali Veli",
+            "delivery": "1", "delivery_fee": "50", "free_delivery_over": "0", "min_order": "0", "ordering_open": "1",
+            "pay_card": "1", "paytr_merchant_id": "123456", "paytr_key": "KEYKEYKEY", "paytr_salt": "SALTSALT", "paytr_test": "1"}
+    assert "Ayarlar kaydedildi" in c.post("/panel/settings", data=form, follow_redirects=True).get_data(as_text=True)
+    b = db.one("SELECT * FROM businesses WHERE id = ?", (biz["id"],))
+    assert b["paytr_key_enc"] and "KEYKEYKEY" not in b["paytr_key_enc"]
+    with app.app_context():
+        assert paytr.creds(b)["key"] == "KEYKEYKEY"
+    # anahtar boş bırakılınca eskisi korunur
+    form.update(paytr_key="", paytr_salt="")
+    c.post("/panel/settings", data=form)
+    assert db.one("SELECT paytr_key_enc FROM businesses WHERE id = ?", (biz["id"],))["paytr_key_enc"] == b["paytr_key_enc"]
+    assert "Kart" in c.get("/s/ege-zeytin/").get_data(as_text=True)
+
+    r = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 2}], payment="card").get_json()
+    assert r["pay_url"].endswith("/pay/" + core.get_order(r["id"])["token"])
+    captured = {}
+    monkeypatch.setattr(paytr, "get_token", lambda payload, session=None: captured.update(payload) or "TOK123")
+    html = app.test_client().get(r["pay_url"]).get_data(as_text=True)
+    assert "paytr.com/odeme/guvenli/TOK123" in html
+    assert captured["payment_amount"] == "75000" and captured["test_mode"] == "1" and captured["merchant_id"] == "123456"
+    oid = captured["merchant_oid"]
+    with app.app_context():
+        good = paytr.callback_hash(b, oid, "success", "75000")
+    cl = app.test_client()
+    assert cl.post("/paytr/callback", data={"merchant_oid": oid, "status": "success", "total_amount": "75000",
+                                            "hash": "yanlis"}).status_code == 400
+    assert core.get_order(r["id"])["paid"] == 0
+    assert cl.post("/paytr/callback", data={"merchant_oid": oid, "status": "success", "total_amount": "75000",
+                                            "hash": good}).get_data(as_text=True) == "OK"
+    o = core.get_order(r["id"])
+    assert o["paid"] == 1 and core.payments(o["id"])[0]["method"] == "card"
+    # tekrar gelen bildirim çift ödeme yazmaz
+    cl.post("/paytr/callback", data={"merchant_oid": oid, "status": "success", "total_amount": "75000", "hash": good})
+    assert len(core.payments(o["id"])) == 1
+    # ödenmiş siparişin ödeme sayfası siparişe yönlendirir
+    assert app.test_client().get(r["pay_url"]).status_code == 302
+
+
+def test_share_guide_and_instagram(app):
+    c, biz, _, t = _owner(app)
+    html = c.get("/panel/qr").get_data(as_text=True)
+    assert "Instagram profil linki" in html and "Google İşletme Profili" in html

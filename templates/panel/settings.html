@@ -18,6 +18,7 @@
       <label class="fld"><span>Telefon</span><input name="phone" type="tel" value="{{ ('0' ~ b.phone) if b.phone and b.phone|length == 10 else b.phone }}" placeholder="05XX XXX XX XX"></label>
       <label class="fld"><span>WhatsApp</span><input name="whatsapp" type="tel" value="{{ ('0' ~ b.whatsapp) if b.whatsapp else '' }}" placeholder="05XX XXX XX XX"></label>
     </div>
+    <label class="fld"><span>Instagram kullanıcı adı</span><input name="instagram" value="{{ b.instagram }}" maxlength="60" placeholder="ör. egezeytin" autocapitalize="off"></label>
     <div class="row2">
       <label class="fld"><span>Ana renk</span><input name="accent" type="color" value="{{ b.accent }}"></label>
       <div class="fld"><span>Logo</span>
@@ -36,6 +37,17 @@
       <label class="fld"><span>Banka</span><input name="iban_bank" value="{{ b.iban_bank }}" maxlength="60" placeholder="ör. Ziraat Bankası"></label>
     </div>
     <small class="muted">Müşteri IBAN'ı seçerse sipariş sonrası ekranında bu bilgiler ve "açıklamaya Sipariş No yaz" uyarısı görünür.</small>
+    <details class="pay-add" {% if b.pay_card %}open{% endif %}>
+      <summary>Kartla online ödeme (PayTR)</summary>
+      <label class="check"><input type="checkbox" name="pay_card" value="1" {% if b.pay_card %}checked{% endif %}> Kartla ödeme açık</label>
+      <label class="fld"><span>PayTR Mağaza No</span><input name="paytr_merchant_id" value="{{ b.paytr_merchant_id }}" inputmode="numeric" autocomplete="off"></label>
+      <div class="row2">
+        <label class="fld"><span>Merchant Key</span><input name="paytr_key" type="password" autocomplete="new-password" placeholder="{{ 'kayıtlı · değiştirmek için yaz' if b.paytr_key_enc else '' }}"></label>
+        <label class="fld"><span>Merchant Salt</span><input name="paytr_salt" type="password" autocomplete="new-password" placeholder="{{ 'kayıtlı · değiştirmek için yaz' if b.paytr_salt_enc else '' }}"></label>
+      </div>
+      <label class="check"><input type="checkbox" name="paytr_test" value="1" {% if b.paytr_test %}checked{% endif %}> Test modu (gerçek para çekilmez)</label>
+      <p class="muted"><small>PayTR Mağaza Paneli → Destek &amp; Kurulum → Entegrasyon Bilgileri'nden alınır. Aynı yerde <b>Bildirim URL</b>'ini şu adres yap: <code>{{ callback_url }}</code>. Anahtarlar şifreli saklanır. PayTR komisyonu işletmeye aittir.</small></p>
+    </details>
   </section>
 
   <section class="card">

@@ -498,30 +498,99 @@ def categories():
 def campaign():
     if request.method == "POST":
         f = request.form
+        section = f.get("section", "stamp")
         try:
-            every = int(f.get("reward_every") or 0)
-            min_total = core.money(f.get("reward_min_total") or "0")
-        except ValueError:
-            every, min_total = 0, None
-        text = (f.get("reward_text") or "").strip()[:120]
-        active = 1 if f.get("reward_active") else 0
-        if not 2 <= every <= 100:
-            flash("Kaç siparişte bir ödül verileceğini 2 ile 100 arasında yaz.", "error")
-        elif min_total is None:
-            flash("En az tutarı doğru yaz.", "error")
-        elif active and not text:
-            flash("Ödülü yaz (ör. '1 kg zeytin' ya da '%10 indirim').", "error")
-        else:
-            db.update("businesses", g.biz["id"], {"reward_active": active, "reward_every": every,
-                                                  "reward_text": text, "reward_min_total": str(min_total)})
+            if section == "stamp":
+                try:
+                    every = int(f.get("reward_every") or 0)
+                except ValueError:
+                    every = 0
+                text = (f.get("reward_text") or "").strip()[:120]
+                active = 1 if f.get("reward_active") else 0
+                if not 2 <= every <= 100:
+                    raise ValueError("Kaç siparişte bir ödül verileceğini 2 ile 100 arasında yaz.")
+                if active and not text:
+                    raise ValueError("Ödülü yaz (ör. '1 kg zeytin' ya da '%10 indirim').")
+                values = {"reward_active": active, "reward_every": every, "reward_text": text,
+                          "reward_min_total": str(core.money(f.get("reward_min_total") or "0"))}
+            elif section == "first":
+                kind = f.get("first_discount_type")
+                val = core.money(f.get("first_discount_value") or "0")
+                active = 1 if f.get("first_discount_active") else 0
+                if kind not in ("percent", "amount"):
+                    raise ValueError("İndirim türünü seç.")
+                if active and val <= 0:
+                    raise ValueError("İndirim miktarını yaz.")
+                if kind == "percent" and val > 50:
+                    raise ValueError("Yüzde indirim en fazla %50 olabilir.")
+                values = {"first_discount_active": active, "first_discount_type": kind, "first_discount_value": str(val)}
+            elif section == "birthday":
+                text = (f.get("birthday_text") or "").strip()[:120]
+                active = 1 if f.get("birthday_active") else 0
+                if active and not text:
+                    raise ValueError("Doğum günü hediyesini yaz (ör. 250 g zeytin).")
+                values = {"birthday_active": active, "birthday_text": text}
+            elif section == "referral":
+                text = (f.get("referral_text") or "").strip()[:120]
+                active = 1 if f.get("referral_active") else 0
+                if active and not text:
+                    raise ValueError("Davet ödülünü yaz (ör. 1 kg zeytin).")
+                values = {"referral_active": active, "referral_text": text}
+            else:
+                abort(400)
+            db.update("businesses", g.biz["id"], values)
             db.commit()
-            flash("Kampanya kaydedildi." if active else "Kampanya kaydedildi (şu an kapalı).", "ok")
-            return redirect(url_for("panel.campaign"))
+            flash("Kaydedildi.", "ok")
+            return redirect(url_for("panel.campaign") + "#" + section)
+        except ValueError as e:
+            db.rollback()
+            msg = str(e)
+            flash("Tutarı rakamla yaz." if "geçersiz" in msg else msg, "error")
     biz = db.one("SELECT * FROM businesses WHERE id = ?", (g.biz["id"],))
     stats = db.one("SELECT COUNT(*) AS earned, SUM(CASE WHEN status = 'given' THEN 1 ELSE 0 END) AS given "
                    "FROM rewards WHERE business_id = ?", (g.biz["id"],))
     return render_template("panel/campaign.html", active="campaign", b=biz, rule=core.reward_rule(biz),
-                           stats=stats)
+                           first=core.first_order_offer(biz), stats=stats)
+
+
+# ── Toplu duyuru ────────────────────────────────────────────────────────────
+
+@bp.route("/broadcast", methods=["GET", "POST"])
+@login_required
+def broadcast():
+    bid = g.biz["id"]
+    if request.method == "POST":
+        if request.form.get("action") == "optout":
+            cid = request.form.get("customer_id", type=int)
+            db.execute("UPDATE customers SET marketing_ok = 0 WHERE id = ? AND business_id = ?", (cid, bid))
+            db.commit()
+            flash("Müşteri duyuru listesinden çıkarıldı.", "ok")
+            return redirect(url_for("panel.broadcast"))
+        msg = (request.form.get("message") or "").strip()[:1000]
+        if len(msg) < 5:
+            flash("Duyuru metnini yaz.", "error")
+            return redirect(url_for("panel.broadcast"))
+        bc = db.insert("broadcasts", {"business_id": bid, "message": msg, "created_at": core.now()})
+        db.commit()
+        return redirect(url_for("panel.broadcast", id=bc))
+    current = None
+    bc_id = request.args.get("id", type=int)
+    if bc_id:
+        current = db.one("SELECT * FROM broadcasts WHERE id = ? AND business_id = ?", (bc_id, bid))
+    people = db.query("SELECT * FROM customers WHERE business_id = ? AND marketing_ok = 1 ORDER BY name", (bid,))
+    links = []
+    if current:
+        store = public_store_url(g.biz)
+        for p in people:
+            first = (p["name"] or "").split()[0] if p["name"] else ""
+            text = current["message"].replace("{ad}", first).replace("{link}", store)
+            if "{link}" not in current["message"] and store not in text:
+                text += f"\n\n{store}"
+            text += "\n\n(Duyuru almak istemiyorsan 'İPTAL' yazman yeterli.)"
+            links.append((p, core.wa_link(p["phone"], text)))
+    history = db.query("SELECT * FROM broadcasts WHERE business_id = ? ORDER BY id DESC LIMIT 10", (bid,))
+    return render_template("panel/broadcast.html", active="customers", people=people, current=current, links=links,
+                           history=history)
 
 
 @bp.get("/customers")
@@ -572,6 +641,15 @@ def settings():
             "delivery_note": (f.get("delivery_note") or "").strip()[:200],
             "pickup_address": (f.get("pickup_address") or "").strip()[:200],
         }
+        v["instagram"] = (f.get("instagram") or "").strip().lstrip("@")[:60]
+        v["pay_card"] = 1 if f.get("pay_card") else 0
+        v["paytr_test"] = 1 if f.get("paytr_test") else 0
+        v["paytr_merchant_id"] = "".join(ch for ch in (f.get("paytr_merchant_id") or "") if ch.isdigit())[:20]
+        import paytr as _paytr
+        if (f.get("paytr_key") or "").strip():
+            v["paytr_key_enc"] = _paytr.encrypt(f.get("paytr_key").strip())
+        if (f.get("paytr_salt") or "").strip():
+            v["paytr_salt_enc"] = _paytr.encrypt(f.get("paytr_salt").strip())
         accent = (f.get("accent") or "").strip()
         if len(accent) == 7 and accent.startswith("#"):
             v["accent"] = accent
@@ -581,8 +659,11 @@ def settings():
             except ValueError:
                 errors.append("Tutarları rakamla yaz (ör. 50 ya da 49,90).")
                 break
-        if not v["pay_cash"] and not v["pay_iban"]:
+        if not v["pay_cash"] and not v["pay_iban"] and not v["pay_card"]:
             errors.append("En az bir ödeme yöntemi açık olmalı.")
+        if v["pay_card"] and not (v["paytr_merchant_id"] and (v.get("paytr_key_enc") or b["paytr_key_enc"])
+                                  and (v.get("paytr_salt_enc") or b["paytr_salt_enc"])):
+            errors.append("Kartla ödeme için PayTR Mağaza No, Merchant Key ve Merchant Salt gerekli.")
         if v["pay_iban"] and not core.valid_iban(v["iban"]):
             errors.append("IBAN geçersiz görünüyor. TR ile başlayan 26 karakterlik IBAN'ı kontrol et.")
         if v["pay_iban"] and not v["iban_holder"]:
@@ -592,7 +673,7 @@ def settings():
         if errors:
             for e in dict.fromkeys(errors):
                 flash(e, "error")
-            b = {**b, **v}
+            b = {**b, **{k: val for k, val in v.items() if not k.endswith("_enc")}}
         else:
             try:
                 logo = request.files.get("logo")
@@ -607,7 +688,9 @@ def settings():
             except ValueError as e:
                 db.rollback()
                 flash(str(e), "error")
-    return render_template("panel/settings.html", active="settings", b=b, zones=core.zones(g.biz["id"]))
+    from app import public_base
+    return render_template("panel/settings.html", active="settings", b=b, zones=core.zones(g.biz["id"]),
+                           callback_url=public_base() + "/paytr/callback")
 
 
 # ── QR ──────────────────────────────────────────────────────────────────────

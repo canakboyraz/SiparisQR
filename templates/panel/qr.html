@@ -14,7 +14,31 @@
     </div>
   </div>
 </section>
-<p class="muted">İpucu: Linki Instagram profiline, WhatsApp durumuna ve Google işletme kaydına da ekleyebilirsin. Aynı adres her yerde çalışır.</p>
+<section class="card guide">
+  <h2>Linkini her yerde paylaş</h2>
+  <p class="muted">Aynı link QR'da, Instagram'da, Google'da ve WhatsApp'ta çalışır. Ne kadar çok yerde olursa o kadar sipariş gelir.</p>
+  <details open><summary>📸 Instagram profil linki</summary>
+    <ol><li>Instagram → Profil → <b>Profili düzenle</b> → <b>Bağlantılar</b> → <b>Harici bağlantı ekle</b>.</li>
+      <li>URL'ye mağaza linkini yapıştır, başlığa <b>Online sipariş</b> yaz.</li>
+      <li>Hikâyelerde <b>Bağlantı</b> çıkartmasıyla da paylaş; "Öne çıkanlar"a "Sipariş" adıyla ekle.</li></ol>
+    <button class="btn-sm" type="button" data-copy="{{ store_url }}">Linki kopyala</button>
+  </details>
+  <details><summary>📍 Google İşletme Profili</summary>
+    <ol><li>Google'da işletmeni ara → <b>Profili düzenle</b> (ya da business.google.com).</li>
+      <li><b>Bağlantılar</b> / <b>İletişim</b> bölümünde <b>Sipariş bağlantısı</b> (Online sipariş) alanına mağaza linkini ekle.</li>
+      <li>Haritada "Sipariş ver" düğmesi olarak görünür; onay birkaç gün sürebilir.</li></ol>
+  </details>
+  <details><summary>💬 WhatsApp Business</summary>
+    <ol><li>WhatsApp Business → Ayarlar → <b>İşletme araçları</b> → <b>Profil</b> → <b>Web sitesi</b>'ne linki ekle.</li>
+      <li><b>Hızlı yanıtlar</b>'a <code>/siparis</code> kısayoluyla linki kaydet; soran herkese tek dokunuşla gönder.</li>
+      <li>Durum (story) olarak da paylaş:</li></ol>
+    <a class="btn-wa btn-wa-sm" href="https://wa.me/?text={{ ('Artık online sipariş alıyoruz 🎉 ' ~ store_url)|urlencode }}" target="_blank" rel="noopener">WhatsApp'ta paylaş</a>
+  </details>
+  <details><summary>🖨️ Basılı malzemeler</summary>
+    <ol><li><a href="{{ url_for('panel.qr_print') }}" target="_blank">Afişi yazdır</a>; tezgâha, vitrine, kasaya koy.</li>
+      <li>Paketlerin içine küçük kart (afişin 8'li baskısı) koy: "Bir dahakine buradan sipariş ver{% if rule %}, {{ rule|lower }}{% endif %}".</li></ol>
+  </details>
+</section>
 {% endblock %}
 {% block pscripts %}<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <script>

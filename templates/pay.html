@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Ödeme · Sipariş #{{ order.id }}{% endblock %}
+{% block head %}<meta name="robots" content="noindex"><style>:root{--accent:{{ biz.accent }}}</style>{% endblock %}
+{% block body_class %}store{% endblock %}
+{% block body %}
+<main class="os">
+  <a class="os-back" href="{{ status_url }}">← Siparişe dön</a>
+  <section class="os-card">
+    <h1 class="pay-title">Kartla ödeme · {{ tl(order.total) }}</h1>
+    {% if error %}<p class="flash is-error">{{ error }}</p>
+    <a class="btn-ghost btn-big" href="{{ status_url }}">Siparişe dön</a>
+    {% else %}
+    <p class="muted">Güvenli ödeme PayTR tarafından yapılır. Kart bilgin {{ biz.name }}'e iletilmez.</p>
+    <script src="https://www.paytr.com/js/iframeResizer.min.js"></script>
+    <iframe src="https://www.paytr.com/odeme/guvenli/{{ iframe_token }}" id="paytriframe" frameborder="0" scrolling="no" style="width:100%;min-height:560px;border:0"></iframe>
+    <script>if (window.iFrameResize) iFrameResize({}, "#paytriframe");</script>
+    {% endif %}
+  </section>
+</main>
+{% endblock %}

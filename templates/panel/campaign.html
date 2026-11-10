@@ -1,27 +1,59 @@
 {% extends "panel/layout.html" %}
 {% block ptitle %}Kampanya{% endblock %}
 {% block content %}
-<h1>Sadakat kampanyası</h1>
-<p class="muted">Müşteri telefon numarasıyla tanınır. Onayladığın her sipariş kartına 1 damga ekler; damgalar dolunca müşteri ödülü kazanır, sana da siparişin içinde "ödülü var" diye görünür.</p>
-<form method="post" class="card form">
-  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-  <label class="switch"><input type="checkbox" name="reward_active" value="1" {% if b.reward_active %}checked{% endif %}><span>Kampanya açık</span></label>
+<h1>Kampanyalar</h1>
+<p class="muted">Müşteri telefon numarasıyla tanınır. Ödüller sipariş <b>onaylanınca</b> hesaplanır; reddedilen ve iptal edilen siparişler sayılmaz. Kazanılan ödül siparişte "🎁 ödülü var" diye görünür.</p>
+
+<form method="post" class="card form" id="stamp">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="section" value="stamp">
+  <h2>🎁 Damga kartı</h2>
+  <label class="switch"><input type="checkbox" name="reward_active" value="1" {% if b.reward_active %}checked{% endif %}><span>Açık</span></label>
   <div class="row2">
-    <label class="fld"><span>Kaç siparişte bir?</span><input name="reward_every" type="number" min="2" max="100" value="{{ b.reward_every }}" required>
-      <small>ör. 6 yazarsan 6., 12., 18. siparişte ödül</small></label>
-    <label class="fld"><span>Ödül ne?</span><input name="reward_text" value="{{ b.reward_text }}" maxlength="120" placeholder="ör. 1 kg zeytin">
-      <small>Mağazada "Her 6 siparişe 1 kg zeytin hediye" yazar</small></label>
+    <label class="fld"><span>Kaç siparişte bir?</span><input name="reward_every" type="number" min="2" max="100" value="{{ b.reward_every }}" required></label>
+    <label class="fld"><span>Ödül ne?</span><input name="reward_text" value="{{ b.reward_text }}" maxlength="120" placeholder="ör. 1 kg zeytin"></label>
   </div>
-  <label class="fld"><span>Sayılması için en az sipariş tutarı (TL)</span><input name="reward_min_total" inputmode="decimal" value="{{ b.reward_min_total|replace('.00', '') }}">
-    <small>0 = her sipariş sayılır. Teslimat ücreti tutara dahil edilmez.</small></label>
-  <div class="preview"><small>Mağazada görünecek:</small><b id="cp-prev">{{ rule or 'Kampanya kapalı — mağazada görünmez.' }}</b></div>
+  <label class="fld"><span>Sayılması için en az tutar (TL)</span><input name="reward_min_total" inputmode="decimal" value="{{ b.reward_min_total|replace('.00', '') }}"><small>0 = her sipariş sayılır</small></label>
+  <div class="preview"><small>Mağazada:</small><b>{{ rule or 'Kapalı' }}</b></div>
   <button class="btn-primary" type="submit">Kaydet</button>
 </form>
+
+<form method="post" class="card form" id="first">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="section" value="first">
+  <h2>✨ İlk sipariş indirimi</h2>
+  <label class="switch"><input type="checkbox" name="first_discount_active" value="1" {% if b.first_discount_active %}checked{% endif %}><span>Açık</span></label>
+  <div class="row2">
+    <label class="fld"><span>Tür</span><select name="first_discount_type">
+      <option value="percent" {% if b.first_discount_type == 'percent' %}selected{% endif %}>Yüzde (%)</option>
+      <option value="amount" {% if b.first_discount_type == 'amount' %}selected{% endif %}>Tutar (TL)</option></select></label>
+    <label class="fld"><span>Miktar</span><input name="first_discount_value" inputmode="decimal" value="{{ b.first_discount_value|replace('.00', '') }}" placeholder="ör. 10"></label>
+  </div>
+  <p class="muted">Bu telefon numarasıyla ilk kez sipariş verene sepette otomatik uygulanır (teslimat ücretine uygulanmaz).</p>
+  <div class="preview"><small>Mağazada:</small><b>{{ first or 'Kapalı' }}</b></div>
+  <button class="btn-primary" type="submit">Kaydet</button>
+</form>
+
+<form method="post" class="card form" id="referral">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="section" value="referral">
+  <h2>👋 Arkadaşını getir</h2>
+  <label class="switch"><input type="checkbox" name="referral_active" value="1" {% if b.referral_active %}checked{% endif %}><span>Açık</span></label>
+  <label class="fld"><span>İkisine de verilecek ödül</span><input name="referral_text" value="{{ b.referral_text }}" maxlength="120" placeholder="ör. 250 g zeytin"></label>
+  <p class="muted">Onaylanmış siparişi olan her müşteri, sipariş ekranında kendine özel bir davet linki görür. Bu linkle ilk siparişini veren arkadaşı onaylanınca ikisine de ödül yazılır.</p>
+  <button class="btn-primary" type="submit">Kaydet</button>
+</form>
+
+<form method="post" class="card form" id="birthday">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="section" value="birthday">
+  <h2>🎂 Doğum günü hediyesi</h2>
+  <label class="switch"><input type="checkbox" name="birthday_active" value="1" {% if b.birthday_active %}checked{% endif %}><span>Açık</span></label>
+  <label class="fld"><span>Hediye</span><input name="birthday_text" value="{{ b.birthday_text }}" maxlength="120" placeholder="ör. 1 kavanoz zeytin ezmesi"></label>
+  <p class="muted">Açıkken sipariş formunda isteğe bağlı doğum günü sorulur. Doğum gününe ±7 gün içinde verilen sipariş onaylanınca yılda bir kez hediye yazılır.</p>
+  <button class="btn-primary" type="submit">Kaydet</button>
+</form>
+
 <section class="card stats">
   <div><b>{{ stats.earned or 0 }}</b><span>kazanılan ödül</span></div>
-  <div><b>{{ stats.given or 0 }}</b><span>verilen ödül</span></div>
+  <div><b>{{ stats.given or 0 }}</b><span>verilen</span></div>
   <div><b>{{ (stats.earned or 0) - (stats.given or 0) }}</b><span>bekleyen</span></div>
 </section>
-<p><a href="{{ url_for('panel.customers') }}">Ödülü bekleyen müşterileri gör →</a></p>
-<p class="muted">Kuralı sonradan değiştirirsen eski siparişler korunur; damga sayısı yeni kurala göre hesaplanır. Reddedilen ve iptal edilen siparişler sayılmaz.</p>
+<p><a href="{{ url_for('panel.customers') }}">Ödülü bekleyen müşteriler →</a> · <a href="{{ url_for('panel.broadcast') }}">Müşterilere duyuru gönder →</a></p>
 {% endblock %}

@@ -91,7 +91,10 @@ def _place(biz):
         "body": f"{order['customer_name']} · {n_lines} kalem · {core.PAYMENT[order['payment']]}. Onay bekliyor.",
         "url": f"/panel/orders/{order['id']}", "tag": f"order{order['id']}",
     }, push_subject())
-    return jsonify(ok=True, id=order["id"], url=f"{g.base}/o/{order['token']}")
+    resp = {"ok": True, "id": order["id"], "url": f"{g.base}/o/{order['token']}"}
+    if order["payment"] == "card":
+        resp["pay_url"] = f"{g.base}/pay/{order['token']}"
+    return jsonify(**resp)
 
 
 @bp.post("/api/order")
@@ -178,3 +181,84 @@ def service_worker():
     resp.headers["Cache-Control"] = "no-cache"
     resp.headers["Service-Worker-Allowed"] = "/"
     return resp
+
+
+
+# ── Kartla ödeme (PayTR) ────────────────────────────────────────────────────
+
+def _pay(biz, token):
+    import paytr
+    from flask import redirect
+    order = db.one("SELECT * FROM orders WHERE token = ? AND business_id = ?", (token, biz["id"]))
+    if not order:
+        abort(404, "Sipariş bulunamadı.")
+    status_url = f"{g.base}/o/{token}"
+    if order["payment"] != "card" or order["paid"] or order["status"] in ("rejected", "cancelled"):
+        return redirect(status_url)
+    if not core.card_ready(biz):
+        return render_template("pay.html", biz=biz, order=order, error="Kartla ödeme şu an kullanılamıyor.",
+                               status_url=status_url)
+    ip = request.remote_addr or "0.0.0.0"
+    if rate_limited(f"pay:{order['id']}", 8, 600):
+        return render_template("pay.html", biz=biz, order=order, error="Çok fazla deneme yapıldı, biraz sonra tekrar dene.",
+                               status_url=status_url), 429
+    oid = paytr.merchant_oid()
+    root = request.host_url.rstrip("/")
+    try:
+        payload = paytr.build_payload(biz, order, core.order_lines(order["id"]), oid, ip,
+                                      f"{root}{status_url}?odeme=tamam", f"{root}{status_url}?odeme=hata")
+        db.insert("card_payments", {"business_id": biz["id"], "order_id": order["id"], "merchant_oid": oid,
+                                    "amount_cents": int(payload["payment_amount"]), "status": "started",
+                                    "created_at": core.now()})
+        db.commit()
+        iframe = paytr.get_token(payload)
+    except Exception as e:  # PayTR'ye ulaşılamaz ya da bilgiler yanlış
+        db.rollback()
+        log_reason = str(e)[:300]
+        db.execute("UPDATE card_payments SET status = 'failed', reason = ? WHERE merchant_oid = ?", (log_reason, oid))
+        db.commit()
+        return render_template("pay.html", biz=biz, order=order, status_url=status_url,
+                               error="Ödeme sayfası açılamadı. Biraz sonra tekrar dene ya da işletmeyle iletişime geç.")
+    return render_template("pay.html", biz=biz, order=order, iframe_token=iframe, status_url=status_url)
+
+
+@bp.get("/pay/<token>")
+def pay_host(token):
+    return _pay(_biz(), token)
+
+
+@bp.get("/s/<slug>/pay/<token>")
+def pay_slug(slug, token):
+    return _pay(_biz(slug), token)
+
+
+@bp.post("/paytr/callback")
+def paytr_callback():
+    import paytr
+    f = request.form
+    oid = f.get("merchant_oid", "")
+    cp = db.one("SELECT * FROM card_payments WHERE merchant_oid = ?", (oid,))
+    if not cp:
+        return "PAYTR notification failed", 400
+    biz = db.one("SELECT * FROM businesses WHERE id = ?", (cp["business_id"],))
+    if not biz or not paytr.verify_callback(biz, oid, f.get("status", ""), f.get("total_amount", ""), f.get("hash", "")):
+        return "PAYTR notification failed", 400
+    if cp["status"] == "success":
+        return "OK"
+    order = core.get_order(cp["order_id"])
+    try:
+        total = int(f.get("total_amount") or 0)
+    except ValueError:
+        total = 0
+    if f.get("status") == "success" and total >= cp["amount_cents"]:
+        db.execute("UPDATE card_payments SET status = 'success' WHERE id = ?", (cp["id"],))
+        db.commit()
+        core.add_payment(biz["id"], order, str(core.from_cents(cp["amount_cents"])), "card", "PayTR ile kartla ödendi")
+        webpush.notify_business(biz["id"], {
+            "title": f"💳 Kartla ödendi · #{order['id']}", "body": f"{order['customer_name']} {core.tl(core.from_cents(cp['amount_cents']))} ödedi.",
+            "url": f"/panel/orders/{order['id']}", "tag": f"pay{order['id']}"}, push_subject())
+    else:
+        db.execute("UPDATE card_payments SET status = 'failed', reason = ? WHERE id = ?",
+                   ((f.get("failed_reason_msg") or f.get("status") or "")[:300], cp["id"]))
+        db.commit()
+    return "OK"

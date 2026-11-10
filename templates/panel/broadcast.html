@@ -1,0 +1,70 @@
+{% extends "panel/layout.html" %}
+{% block ptitle %}Duyuru{% endblock %}
+{% block content %}
+<a class="pn-back" href="{{ url_for('panel.customers') }}">← Müşteriler</a>
+<h1>Müşterilere duyuru</h1>
+<p class="muted">Sadece sipariş verirken "duyuru almak istiyorum" kutusunu işaretleyen <b>{{ people|length }}</b> müşteriye gönderilir (KVKK). WhatsApp toplu gönderime izin vermediği için her kişi için bir düğme çıkar; dokunup "Gönder" demen yeterli.</p>
+
+<form method="post" class="card form">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <label class="fld"><span>Mesaj</span>
+    <textarea name="message" rows="5" maxlength="1000" required placeholder="Merhaba {ad}, yeni hasat zeytinyağımız geldi! Bu hafta 5 lt tenekede %10 indirim. Sipariş için: {link}">{{ current.message if current else '' }}</textarea>
+    <small><code>{ad}</code> müşterinin adıyla, <code>{link}</code> mağaza linkiyle değişir.</small></label>
+  <button class="btn-primary" type="submit" {% if not people %}disabled{% endif %}>Gönderim listesini hazırla</button>
+</form>
+
+{% if current %}
+<section class="card">
+  <h2>Gönder <small class="muted">· <span id="bc-done">0</span>/{{ links|length }}</small></h2>
+  <ul class="bc">
+    {% for p, link in links %}
+    <li>
+      <span><b>{{ p.name }}</b><small>{{ pretty_phone(p.phone) }}</small></span>
+      <a class="btn-wa btn-wa-sm" href="{{ link }}" target="_blank" rel="noopener" data-bc="{{ current.id }}-{{ p.id }}">Gönder</a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if people %}
+<section class="card">
+  <h2>Duyuru listesi</h2>
+  <ul class="bc">
+    {% for p in people %}
+    <li><span><b>{{ p.name }}</b><small>{{ pretty_phone(p.phone) }}</small></span>
+      <form method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="action" value="optout"><input type="hidden" name="customer_id" value="{{ p.id }}">
+        <button class="btn-link is-danger" type="submit">Listeden çıkar</button></form></li>
+    {% endfor %}
+  </ul>
+  <p class="muted">"İPTAL" yazan müşteriyi buradan çıkar.</p>
+</section>
+{% else %}
+<div class="pn-empty"><p>Henüz duyuru izni veren müşteri yok. Sipariş formundaki kutuyu işaretleyenler burada listelenir.</p></div>
+{% endif %}
+
+{% if history %}
+<section class="card"><h2>Önceki duyurular</h2>
+  <ul class="bc">{% for h in history %}<li><span><small>{{ local_time(h.created_at) }}</small>{{ h.message|truncate(90) }}</span><a class="btn-sm" href="{{ url_for('panel.broadcast', id=h.id) }}">Tekrar</a></li>{% endfor %}</ul>
+</section>
+{% endif %}
+{% endblock %}
+{% block pscripts %}<script>
+(function () {
+  var done = document.getElementById("bc-done");
+  function mark() {
+    var n = 0;
+    document.querySelectorAll("[data-bc]").forEach(function (a) {
+      var sent = false; try { sent = localStorage.getItem("bc:" + a.getAttribute("data-bc")) === "1"; } catch (e) {}
+      a.classList.toggle("is-sent", sent); a.textContent = sent ? "Gönderildi ✓" : "Gönder"; if (sent) n++;
+    });
+    if (done) done.textContent = n;
+  }
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest("[data-bc]"); if (!a) return;
+    try { localStorage.setItem("bc:" + a.getAttribute("data-bc"), "1"); } catch (err) {}
+    setTimeout(mark, 300);
+  });
+  mark();
+})();
+</script>{% endblock %}
