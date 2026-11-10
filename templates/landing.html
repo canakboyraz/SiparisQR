@@ -14,8 +14,8 @@
   </ul>
   {% if ps.price_monthly %}
   <div class="plans land-plans">
-    <div><b>Aylık</b><strong>{{ ps.price_monthly }} TL</strong><small>/ ay</small></div>
-    <div class="is-best"><b>Yıllık</b><strong>{{ ps.price_yearly }} TL</strong><small>/ yıl</small></div>
+    <div><b>Aylık</b><strong>{{ tl(ps.price_monthly) }}</strong><small>/ ay</small></div>
+    <div class="is-best"><b>Yıllık</b><strong>{{ tl(ps.price_yearly) }}</strong><small>/ yıl</small></div>
   </div>
   <p class="muted">Sipariş başına komisyon yok · {{ ps.trial_days }} gün ücretsiz deneme · kart bilgisi istenmez</p>
   {% endif %}

@@ -13,8 +13,8 @@
 <section class="card">
   <h2>Planlar</h2>
   <div class="plans">
-    <div><b>Aylık</b><strong>{{ ps.price_monthly }} TL</strong><small>/ ay</small></div>
-    <div class="is-best"><b>Yıllık</b><strong>{{ ps.price_yearly }} TL</strong><small>/ yıl · 2 ay bedava</small></div>
+    <div><b>Aylık</b><strong>{{ tl(ps.price_monthly) }}</strong><small>/ ay</small></div>
+    <div class="is-best"><b>Yıllık</b><strong>{{ tl(ps.price_yearly) }}</strong><small>/ yıl · 2 ay bedava</small></div>
   </div>
   <p class="muted">Tüm özellikler her planda: sınırsız ürün ve sipariş, bildirim, kampanyalar, rapor, kendi domainin. Sipariş başına komisyon yok.</p>
   {% if ps.pay_iban %}
