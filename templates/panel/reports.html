@@ -1,0 +1,52 @@
+{% extends "panel/layout.html" %}
+{% block ptitle %}Rapor{% endblock %}
+{% block content %}
+<div class="pn-head"><h1>Rapor</h1><span class="muted">{{ start.strftime('%d.%m.%Y') }} – {{ end.strftime('%d.%m.%Y') }}</span></div>
+<nav class="pn-seg is-scroll" aria-label="Dönem">
+  {% for k, label in periods.items() %}<a href="{{ url_for('panel.reports', p=k) }}" class="{{ 'is-on' if key == k }}">{{ label }}</a>{% endfor %}
+</nav>
+
+<section class="kpi">
+  <div class="card"><span>Ciro</span><b>{{ tl(s.revenue) }}</b><small>{{ s.orders }} sipariş</small></div>
+  <div class="card"><span>Ortalama sepet</span><b>{{ tl(s.avg) }}</b><small>{{ s.pending }} onay bekliyor</small></div>
+  <div class="card"><span>Tahsil edilen</span><b class="is-ok">{{ tl(s.collected) }}</b><small>{{ tl(s.owed) }} alacak</small></div>
+  <div class="card"><span>Tekrar gelen</span><b>%{{ s.repeat_pct }}</b><small>{{ s.ret_c }} tekrar · {{ s.new_c }} yeni müşteri</small></div>
+</section>
+
+<section class="card">
+  <h2>Günlük ciro</h2>
+  {% if s.orders %}
+  <div class="bars" role="img" aria-label="Günlük ciro grafiği">
+    {% for d in days %}<div class="bar" title="{{ d.label }}: {{ tl(from_cents(d.cents)) }} · {{ d.n }} sipariş"><i style="height:{{ (d.cents * 100 / peak)|round(1) }}%"></i><span>{{ d.label[:2] if days|length > 10 else d.label }}</span></div>{% endfor %}
+  </div>
+  {% else %}<p class="muted">Bu dönemde onaylanmış sipariş yok.</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>En çok satanlar</h2>
+  {% if top %}
+  <ol class="top">
+    {% for t in top %}<li><span>{{ t.name }}</span><small>{{ t.qty }} adet</small><b>{{ tl(from_cents(t.cents)) }}</b></li>{% endfor %}
+  </ol>
+  {% else %}<p class="muted">Henüz veri yok.</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>Kampanyaların etkisi</h2>
+  <dl class="kv">
+    <div><dt>Damga ödülü</dt><dd>{{ s.rewards.get('stamp', 0) }} ödül kazanıldı</dd></div>
+    <div><dt>İlk sipariş</dt><dd>{{ s.first }} siparişte indirim · toplam {{ tl(s.discount) }}</dd></div>
+    <div><dt>Davet</dt><dd>{{ s.referral }} sipariş davetle geldi</dd></div>
+    <div><dt>Doğum günü</dt><dd>{{ s.rewards.get('birthday', 0) }} hediye</dd></div>
+  </dl>
+</section>
+
+<section class="card">
+  <h2>Dağılım</h2>
+  <dl class="kv">
+    <div><dt>Teslimat</dt><dd>{{ s.delivery }} adrese · {{ s.pickup }} gel al</dd></div>
+    <div><dt>Ödeme</dt><dd>{% for k, n in s.by_pay.items() if n %}{{ PAYMENT[k] }}: {{ n }}{% if not loop.last %} · {% endif %}{% else %}—{% endfor %}</dd></div>
+    <div><dt>Red / iptal</dt><dd>{{ s.rejected }} sipariş</dd></div>
+  </dl>
+</section>
+{% endblock %}

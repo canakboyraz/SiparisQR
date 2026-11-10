@@ -418,4 +418,28 @@ em.is-bad{font-style:normal;color:var(--bad);font-weight:700}
 .os-invite p{margin:0 0 12px;color:var(--ink-2)}
 .os-reorder{width:100%;margin:0 0 14px}
 .os-lines .is-disc{color:var(--ok)}
+/* Rapor */
+.pn-head-r{display:flex;align-items:center;gap:10px}
+.pn-seg.is-scroll{overflow-x:auto;scrollbar-width:none}
+.pn-seg.is-scroll a{flex:1 0 auto;white-space:nowrap;padding:9px 12px}
+.kpi{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 14px}
+@media(min-width:760px){.kpi{grid-template-columns:repeat(4,1fr)}}
+.kpi .card{margin:0;padding:14px;display:flex;flex-direction:column;gap:2px}
+.kpi span{font-size:13px;color:var(--ink-3);font-weight:600}
+.kpi b{font-size:clamp(18px,5.4vw,24px);font-weight:800;white-space:nowrap}
+.kpi small{color:var(--ink-3)}
+.bars{display:flex;align-items:flex-end;gap:3px;height:160px;padding-top:6px}
+.bar{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;min-width:0}
+.bar i{display:block;width:100%;max-width:26px;min-height:2px;border-radius:4px 4px 1px 1px;background:var(--accent);opacity:.88}
+.bar span{font-size:9.5px;color:var(--ink-3);margin-top:4px;white-space:nowrap}
+.top{list-style:none;margin:0;padding:0;counter-reset:t}
+.top li{display:grid;grid-template-columns:22px 1fr auto auto;gap:8px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);counter-increment:t}
+.top li::before{content:counter(t);font-weight:800;color:var(--ink-3)}
+.top li:last-child{border:0}
+.top small{color:var(--ink-3);white-space:nowrap}
+.top b{white-space:nowrap}
+.zone-row{display:grid;grid-template-columns:1.4fr .8fr .9fr auto auto;gap:6px;align-items:center;margin:0 0 8px}
+.zone-row.is-new{grid-template-columns:1.4fr .8fr .9fr auto}
+.zone-row input{width:100%;min-width:0;min-height:42px;padding:8px 10px;border:1.5px solid var(--line);border-radius:10px;font-size:16px;background:#fff}
+@media(max-width:520px){.zone-row,.zone-row.is-new{grid-template-columns:1fr 1fr}.zone-row input[name=name]{grid-column:1/-1}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}

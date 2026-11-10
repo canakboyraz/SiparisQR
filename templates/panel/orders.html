@@ -3,7 +3,7 @@
 {% block content %}
 <div class="pn-head" id="orders" data-latest="{{ latest }}" data-poll="{{ url_for('panel.poll') }}">
   <h1>Siparişler</h1>
-  <span class="pn-live" title="Sayfa kendiliğinden yenilenir"><i></i>Canlı</span>
+  <span class="pn-head-r"><a class="btn-sm" href="{{ url_for('panel.reports') }}">📊 Rapor</a><span class="pn-live" title="Sayfa kendiliğinden yenilenir"><i></i>Canlı</span></span>
 </div>
 <nav class="pn-seg" aria-label="Sipariş durumu">
   {% for key, (label, _) in tabs.items() %}

@@ -557,3 +557,62 @@ def test_admin_impersonation(app):
     login(c3, "sahip@ege.com", "sahip12345")
     t3 = csrf(c3, "/panel/orders")
     assert c3.post(f"/admin/{biz['id']}/enter", data={"csrf": t3}).status_code == 403
+
+
+# ── 2. aşama ────────────────────────────────────────────────────────────────
+
+def test_shipping_zones(app):
+    c, biz, (p1, p2, _), t = _owner(app)
+    c.post("/panel/zones", data={"csrf": t, "action": "add", "name": "Kocaeli içi", "fee": "40", "free_over": "500"})
+    c.post("/panel/zones", data={"csrf": t, "action": "add", "name": "Diğer iller", "fee": "150", "free_over": "0"})
+    zs = core.zones(biz["id"])
+    assert [z["name"] for z in zs] == ["Kocaeli içi", "Diğer iller"]
+    assert "Kocaeli içi" in c.get("/s/ege-zeytin/").get_data(as_text=True)
+    c2 = app.test_client()
+    r = order(c2, "/s/ege-zeytin", [{"id": p1, "qty": 1}])
+    assert r.status_code == 400 and "bölgeni" in r.get_json()["error"]
+    o = core.get_order(order(c2, "/s/ege-zeytin", [{"id": p1, "qty": 1}], zone=zs[0]["id"]).get_json()["id"])
+    assert o["delivery_fee"] == "40.00" and o["zone_name"] == "Kocaeli içi"
+    o = core.get_order(order(c2, "/s/ege-zeytin", [{"id": p1, "qty": 2}], zone=zs[0]["id"]).get_json()["id"])
+    assert o["delivery_fee"] == "0.00"                   # 700 > 500 ücretsiz
+    o = core.get_order(order(c2, "/s/ege-zeytin", [{"id": p1, "qty": 2}], zone=zs[1]["id"]).get_json()["id"])
+    assert o["delivery_fee"] == "150.00"
+    # gel al bölge istemez
+    o = core.get_order(order(c2, "/s/ege-zeytin", [{"id": p1, "qty": 1}], fulfilment="pickup", phone="05440000000").get_json()["id"])
+    assert o["delivery_fee"] == "0.00"
+    c.post("/panel/zones", data={"csrf": t, "action": "delete", "id": zs[1]["id"]})
+    assert len(core.zones(biz["id"])) == 1
+    # başka işletme silemez
+    make_biz(app.test_client(), "Bal Evi", "bal-evi", "", "b@b.com")
+    c3 = app.test_client(); login(c3, "b@b.com", "sahip12345")
+    c3.post("/panel/zones", data={"csrf": csrf(c3, "/panel/orders"), "action": "delete", "id": zs[0]["id"]})
+    assert len(core.zones(biz["id"])) == 1
+
+
+def test_reports(app):
+    c, biz, (p1, p2, _), t = _owner(app)
+    c2 = app.test_client()
+    a = order(c2, "/s/ege-zeytin", [{"id": p1, "qty": 2}]).get_json()["id"]                       # 750
+    b = order(c2, "/s/ege-zeytin", [{"id": p2, "qty": 1}], phone="05440000000", name="Ali Kaya").get_json()["id"]   # 1800
+    x = order(c2, "/s/ege-zeytin", [{"id": p1, "qty": 1}]).get_json()["id"]
+    for oid in (a, b):
+        c.post(f"/panel/orders/{oid}/status", data={"csrf": t, "status": "approved"})
+    c.post(f"/panel/orders/{x}/status", data={"csrf": t, "status": "rejected"})
+    c.post(f"/panel/orders/{a}/payments", data={"csrf": t, "full": "1", "method": "cash"})
+    for p in ("today", "7", "30", "month", "last"):
+        assert c.get(f"/panel/reports?p={p}").status_code == 200
+    html = c.get("/panel/reports?p=today").get_data(as_text=True)
+    assert "2.550 TL" in html and "1.275 TL" in html          # ciro ve ortalama
+    assert "750 TL" in html and "1.800 TL alacak" in html     # tahsil / alacak
+    assert "Zeytinyağı (5 lt)" in html and "Siyah Zeytin (1 kg)" in html
+    assert "1 sipariş" in html                                # red/iptal
+
+
+def test_reorder_button(app):
+    c, biz, (p1, _, _), t = _owner(app)
+    r = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 3}]).get_json()
+    c.post(f"/panel/orders/{r['id']}/status", data={"csrf": t, "status": "approved"})
+    html = c.get(r["url"]).get_data(as_text=True)
+    assert "Aynı siparişi tekrar ver" in html
+    items = json.loads(re.search(r"data-items='([^']+)'", html).group(1))
+    assert items == [{"id": p1, "variant": None, "qty": 3}]

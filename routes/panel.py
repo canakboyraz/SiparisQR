@@ -607,7 +607,7 @@ def settings():
             except ValueError as e:
                 db.rollback()
                 flash(str(e), "error")
-    return render_template("panel/settings.html", active="settings", b=b)
+    return render_template("panel/settings.html", active="settings", b=b, zones=core.zones(g.biz["id"]))
 
 
 # ── QR ──────────────────────────────────────────────────────────────────────
@@ -695,3 +695,134 @@ def manifest():
             "icons": [{"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"},
                       {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}]}
     return Response(json.dumps(data, ensure_ascii=False), mimetype="application/manifest+json")
+
+
+# ── Rapor ───────────────────────────────────────────────────────────────────
+
+PERIODS = {"today": "Bugün", "7": "7 gün", "30": "30 gün", "month": "Bu ay", "last": "Geçen ay"}
+
+
+def _range(key):
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(core.TZ)
+    day0 = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if key == "today":
+        start, end = day0, day0 + timedelta(days=1)
+    elif key == "7":
+        start, end = day0 - timedelta(days=6), day0 + timedelta(days=1)
+    elif key == "month":
+        start = day0.replace(day=1)
+        end = day0 + timedelta(days=1)
+    elif key == "last":
+        end = day0.replace(day=1)
+        start = (end - timedelta(days=1)).replace(day=1)
+    else:
+        start, end = day0 - timedelta(days=29), day0 + timedelta(days=1)
+    iso = lambda d: d.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return start, end, iso(start), iso(end)
+
+
+@bp.get("/reports")
+@login_required
+def reports():
+    from datetime import timedelta
+    key = request.args.get("p", "30")
+    if key not in PERIODS:
+        key = "30"
+    start, end, s_iso, e_iso = _range(key)
+    bid = g.biz["id"]
+    rows = db.query("SELECT * FROM orders WHERE business_id = ? AND created_at >= ? AND created_at < ? ORDER BY id",
+                    (bid, s_iso, e_iso))
+    good = [o for o in rows if o["status"] in core.COUNTED]
+    revenue = sum(core.cents(o["total"]) for o in good)
+    collected = sum(int(o["paid_cents"] or 0) for o in good)
+    discount = sum(core.cents(o["discount"]) for o in good)
+    # yeni / tekrar gelen müşteri
+    first_ids = {}
+    if good:
+        cids = sorted({o["customer_id"] for o in good})
+        marks = ",".join("?" for _ in cids)
+        for r in db.query(f"SELECT customer_id, MIN(id) AS first_id FROM orders WHERE customer_id IN ({marks}) "
+                          f"AND status IN ('approved','on_the_way','delivered') GROUP BY customer_id", tuple(cids)):
+            first_ids[r["customer_id"]] = r["first_id"]
+    customers = {}
+    for o in good:
+        customers.setdefault(o["customer_id"], []).append(o)
+    new_c = sum(1 for cid, os_ in customers.items() if first_ids.get(cid) in {o["id"] for o in os_})
+    ret_c = len(customers) - new_c
+    # en çok satanlar
+    top = {}
+    if good:
+        ids = [o["id"] for o in good]
+        marks = ",".join("?" for _ in ids)
+        for l in db.query(f"SELECT name, unit, qty, line_total FROM order_lines WHERE order_id IN ({marks})", tuple(ids)):
+            k = f"{l['name']} ({l['unit']})" if l["unit"] else l["name"]
+            t = top.setdefault(k, {"name": k, "qty": 0, "cents": 0})
+            t["qty"] += int(l["qty"])
+            t["cents"] += core.cents(l["line_total"])
+    top = sorted(top.values(), key=lambda x: (-x["cents"], -x["qty"]))[:10]
+    # günlük ciro
+    days = []
+    d = start
+    while d < end and len(days) < 62:
+        days.append({"label": d.strftime("%d.%m"), "cents": 0, "n": 0, "key": d.strftime("%Y-%m-%d")})
+        d += timedelta(days=1)
+    by_day = {x["key"]: x for x in days}
+    for o in good:
+        k = core.local_time(o["created_at"], "%Y-%m-%d")
+        if k in by_day:
+            by_day[k]["cents"] += core.cents(o["total"])
+            by_day[k]["n"] += 1
+    peak = max([x["cents"] for x in days] or [0]) or 1
+    rewards = db.query("SELECT kind, COUNT(*) AS n FROM rewards WHERE business_id = ? AND created_at >= ? "
+                       "AND created_at < ? GROUP BY kind", (bid, s_iso, e_iso))
+    stats = {
+        "revenue": core.from_cents(revenue), "orders": len(good), "avg": core.from_cents(revenue // len(good) if good else 0),
+        "collected": core.from_cents(collected), "owed": core.from_cents(max(revenue - collected, 0)),
+        "discount": core.from_cents(discount),
+        "rejected": sum(1 for o in rows if o["status"] in ("rejected", "cancelled")),
+        "pending": sum(1 for o in rows if o["status"] == "pending"),
+        "new_c": new_c, "ret_c": ret_c, "repeat_pct": round(ret_c * 100 / len(customers)) if customers else 0,
+        "delivery": sum(1 for o in good if o["fulfilment"] == "delivery"),
+        "pickup": sum(1 for o in good if o["fulfilment"] == "pickup"),
+        "by_pay": {k: sum(1 for o in good if o["payment"] == k) for k in core.PAYMENT},
+        "referral": sum(1 for o in good if o["referred_by"]),
+        "first": sum(1 for o in good if core.money(o["discount"]) > 0),
+        "rewards": {r["kind"]: int(r["n"]) for r in rewards},
+    }
+    return render_template("panel/reports.html", active="reports", key=key, periods=PERIODS, s=stats, top=top,
+                           days=days, peak=peak, start=start, end=end - timedelta(days=1), KIND_LABEL=core.KIND_LABEL)
+
+
+# ── Teslimat bölgeleri ──────────────────────────────────────────────────────
+
+@bp.post("/zones")
+@login_required
+def zones():
+    f = request.form
+    action = f.get("action")
+    zid = f.get("id", type=int)
+    try:
+        if action in ("add", "save"):
+            name = (f.get("name") or "").strip()[:60]
+            if not name:
+                raise ValueError("Bölge adını yaz (ör. Kocaeli içi).")
+            fee = str(core.money(f.get("fee") or "0"))
+            free_over = str(core.money(f.get("free_over") or "0"))
+            if action == "add":
+                n = db.one("SELECT COUNT(*) AS n FROM shipping_zones WHERE business_id = ?", (g.biz["id"],))
+                if int(n["n"]) >= 20:
+                    raise ValueError("En fazla 20 bölge eklenebilir.")
+                db.insert("shipping_zones", {"business_id": g.biz["id"], "name": name, "fee": fee,
+                                             "free_over": free_over, "position": int(n["n"])})
+            elif zid:
+                db.execute("UPDATE shipping_zones SET name = ?, fee = ?, free_over = ? WHERE id = ? AND business_id = ?",
+                           (name, fee, free_over, zid, g.biz["id"]))
+        elif action == "delete" and zid:
+            db.execute("DELETE FROM shipping_zones WHERE id = ? AND business_id = ?", (zid, g.biz["id"]))
+        db.commit()
+        flash("Teslimat bölgeleri güncellendi.", "ok")
+    except ValueError as e:
+        db.rollback()
+        flash(str(e) if "geçersiz" not in str(e) else "Ücretleri rakamla yaz (ör. 50).", "error")
+    return redirect(url_for("panel.settings") + "#bolgeler")

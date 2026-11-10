@@ -52,5 +52,28 @@
   </section>
   <button class="btn-primary btn-big" type="submit">Kaydet</button>
 </form>
+
+<section class="card" id="bolgeler">
+  <h2>Teslimat bölgeleri <small class="muted">· isteğe bağlı</small></h2>
+  <p class="muted">Bölge eklersen müşteri sipariş verirken bölgesini seçer, ücret bölgeye göre hesaplanır. Bölge yoksa yukarıdaki tek teslimat ücreti geçerli olur.</p>
+  {% for z in zones %}
+  <form method="post" action="{{ url_for('panel.zones') }}" class="zone-row">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="id" value="{{ z.id }}">
+    <input name="name" value="{{ z.name }}" maxlength="60" aria-label="Bölge adı">
+    <input name="fee" value="{{ z.fee|replace('.00', '') }}" inputmode="decimal" aria-label="Ücret">
+    <input name="free_over" value="{{ z.free_over|replace('.00', '') }}" inputmode="decimal" aria-label="Şu tutar üstü ücretsiz">
+    <button class="btn-sm" name="action" value="save" type="submit">Kaydet</button>
+    <button class="btn-icon is-danger" name="action" value="delete" type="submit" aria-label="Bölgeyi sil">×</button>
+  </form>
+  {% endfor %}
+  <form method="post" action="{{ url_for('panel.zones') }}" class="zone-row is-new">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input name="name" maxlength="60" placeholder="ör. Kocaeli içi" aria-label="Yeni bölge adı" required>
+    <input name="fee" inputmode="decimal" placeholder="Ücret" aria-label="Ücret">
+    <input name="free_over" inputmode="decimal" placeholder="Üstü ücretsiz" aria-label="Şu tutar üstü ücretsiz">
+    <button class="btn-primary" name="action" value="add" type="submit">Ekle</button>
+  </form>
+  <p class="muted"><small>Sütunlar: bölge adı · teslimat ücreti · bu tutarın üstü ücretsiz (0 = yok)</small></p>
+</section>
 <p><a href="{{ url_for('auth.password') }}">Şifremi değiştir</a></p>
 {% endblock %}
