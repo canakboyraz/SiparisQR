@@ -1,0 +1,112 @@
+{% extends "panel/layout.html" %}
+{% block ptitle %}Sipariş #{{ o.id }}{% endblock %}
+{% block content %}
+<a class="pn-back" href="{{ url_for('panel.orders', tab='pending' if o.status == 'pending' else ('active' if o.status in ('approved','on_the_way') else 'done')) }}">← Siparişler</a>
+<div class="pn-head">
+  <h1>#{{ o.id }} · {{ tl(o.total) }}</h1>
+  <span class="pill is-{{ o.status }}">{{ STATUS[o.status] }}</span>
+</div>
+<p class="muted">{{ local_time(o.created_at) }}{% if o.approved_at %} · onay {{ local_time(o.approved_at, '%H:%M') }}{% endif %}</p>
+
+{% if o.status == 'pending' %}
+<section class="card act-card">
+  <form method="post" action="{{ url_for('panel.order_status', order_id=o.id) }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="status" value="approved">
+    <label class="fld"><span>Müşteriye not <small>(isteğe bağlı)</small></span>
+      <input name="message" maxlength="300" placeholder="ör. Yarın 14:00'te kargoda olur"></label>
+    <button class="btn-primary btn-big" type="submit">✓ Siparişi onayla</button>
+  </form>
+  <details class="reject">
+    <summary>Reddet</summary>
+    <form method="post" action="{{ url_for('panel.order_status', order_id=o.id) }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="status" value="rejected">
+      <label class="fld"><span>Sebep <small>(müşteri görür)</small></span>
+        <input name="reason" maxlength="300" placeholder="ör. Bu ürün stokta kalmadı"></label>
+      <button class="btn-danger" type="submit">Siparişi reddet</button>
+    </form>
+  </details>
+</section>
+{% elif o.status in ('approved', 'on_the_way') %}
+<section class="card act-card">
+  <div class="act-row">
+    {% if o.status == 'approved' %}
+    <form method="post" action="{{ url_for('panel.order_status', order_id=o.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="status" value="on_the_way">
+      <button class="btn-ghost" type="submit">{{ 'Yola çıktı / kargoda' if o.fulfilment == 'delivery' else 'Hazır, gelip alabilir' }}</button></form>
+    {% endif %}
+    <form method="post" action="{{ url_for('panel.order_status', order_id=o.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="status" value="delivered">
+      <button class="btn-primary" type="submit">Teslim edildi</button></form>
+  </div>
+  <details class="reject">
+    <summary>Siparişi iptal et</summary>
+    <form method="post" action="{{ url_for('panel.order_status', order_id=o.id) }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="status" value="cancelled">
+      <label class="fld"><span>Sebep <small>(müşteri görür)</small></span><input name="reason" maxlength="300"></label>
+      <p class="muted">İptal edilen sipariş kampanyada sayılmaz.</p>
+      <button class="btn-danger" type="submit">İptal et</button>
+    </form>
+  </details>
+</section>
+{% elif o.reject_reason %}
+<p class="flash is-error">Sebep: {{ o.reject_reason }}</p>
+{% endif %}
+
+{% if earned_here %}
+<p class="flash is-gift">🎁 Bu siparişle ödül kazanıldı: <b>{{ earned_here[0].text }}</b></p>
+{% endif %}
+{% if card and card.rewards and o.status not in ('rejected', 'cancelled') %}
+<section class="card gift-card">
+  <h2>🎁 Bu müşterinin bekleyen ödülü var</h2>
+  {% for r in card.rewards %}
+  <form method="post" action="{{ url_for('panel.give_reward', reward_id=r.id) }}" class="gift-row">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="order_id" value="{{ o.id }}">
+    <input type="hidden" name="back" value="{{ url_for('panel.order', order_id=o.id) }}">
+    <span><b>{{ r.text }}</b><small>{{ local_time(r.created_at, '%d.%m.%Y') }} tarihinde kazandı</small></span>
+    <button class="btn-sm" type="submit">Bu siparişle verildi</button>
+  </form>
+  {% endfor %}
+</section>
+{% endif %}
+{% if given_here %}<p class="flash is-ok">Bu siparişle verilen ödül: {% for r in given_here %}<b>{{ r.text }}</b>{% endfor %}</p>{% endif %}
+
+<section class="card">
+  <h2>Ürünler</h2>
+  <ul class="os-lines">
+    {% for l in lines %}<li><span><b class="qty">{{ l.qty }}×</b> {{ l.name }}{% if l.unit %} <small>({{ l.unit }})</small>{% endif %}</span><b>{{ tl(l.line_total) }}</b></li>{% endfor %}
+    {% if o.fulfilment == 'delivery' %}<li><span>Teslimat ücreti</span><b>{{ tl(o.delivery_fee) }}</b></li>{% endif %}
+    <li class="is-total"><span>Toplam</span><b>{{ tl(o.total) }}</b></li>
+  </ul>
+  {% if o.note %}<p class="note-box">📝 {{ o.note }}</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>Müşteri</h2>
+  <dl class="kv">
+    <div><dt>Ad</dt><dd>{{ o.customer_name }}{% if previous %} <small class="muted">· {{ previous }} önceki sipariş</small>{% else %} <small class="tag-new">ilk sipariş</small>{% endif %}</dd></div>
+    <div><dt>Telefon</dt><dd><a href="tel:+90{{ o.customer_phone }}">{{ pretty_phone(o.customer_phone) }}</a> · <a href="https://wa.me/90{{ o.customer_phone }}" rel="noopener">WhatsApp</a></dd></div>
+    <div><dt>Teslimat</dt><dd>{{ FULFILMENT[o.fulfilment] }}</dd></div>
+    {% if o.address %}<div><dt>Adres</dt><dd>{{ o.address }}<br><a href="https://www.google.com/maps/search/?api=1&query={{ o.address|urlencode }}" rel="noopener">Haritada aç</a></dd></div>{% endif %}
+    {% if card and card.active %}<div><dt>Kampanya</dt><dd>{{ card.filled }} / {{ card.every }} damga · ödüle {{ card.left }} sipariş</dd></div>{% endif %}
+  </dl>
+</section>
+
+<section class="card">
+  <h2>Ödeme</h2>
+  <div class="pay-row">
+    <span>{{ PAYMENT[o.payment] }} · <b>{{ 'Ödendi' if o.paid else 'Ödeme bekleniyor' }}</b></span>
+    <form method="post" action="{{ url_for('panel.order_paid', order_id=o.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <button class="btn-sm {{ 'is-muted' if o.paid }}" type="submit">{{ 'İşareti kaldır' if o.paid else 'Ödeme alındı' }}</button></form>
+  </div>
+  {% if o.payment == 'iban' %}<p class="muted">Müşteri açıklamaya "Sipariş {{ o.id }}" yazacak. Hesabına düşünce "Ödeme alındı"ya bas; müşteri ekranında görünür.</p>{% endif %}
+</section>
+
+{% if o.status not in ('pending',) %}
+<section class="card">
+  <h2>Müşteriye not</h2>
+  <form method="post" action="{{ url_for('panel.order_message', order_id=o.id) }}" class="inline-form">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input name="message" maxlength="300" value="{{ o.owner_message }}" placeholder="ör. Kargo takip no: 123456">
+    <button class="btn-sm" type="submit">Kaydet</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

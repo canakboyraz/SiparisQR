@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ platform_name }} · QR ile online sipariş{% endblock %}
+{% block body_class %}plain{% endblock %}
+{% block body %}
+<main class="land">
+  <h1>{{ platform_name }}</h1>
+  <p class="lead">Ürünlerini ekle, QR kodunu as. Müşterin okutsun, seçsin, sipariş versin. Sen telefonundan onayla. Her N siparişe hediye kampanyası da içinde.</p>
+  <ul class="land-list">
+    <li><b>QR ile sipariş</b> Masaya, vitrine, pakete, broşüre koy.</li>
+    <li><b>Anında bildirim</b> Sipariş düşer düşmez telefonuna gelir, tek dokunuşla onaylarsın.</li>
+    <li><b>Nakit ya da IBAN</b> Komisyon yok, ödeme doğrudan sana.</li>
+    <li><b>Sadakat kampanyası</b> "Her 6 siparişe 1 hediye" gibi kuralını sen belirlersin.</li>
+    <li><b>Kendi domainin</b> Mağazan kendi adresinde açılır.</li>
+  </ul>
+  <a class="btn-primary" href="/login">İşletme girişi</a>
+</main>
+{% endblock %}

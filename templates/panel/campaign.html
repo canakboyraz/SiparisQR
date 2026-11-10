@@ -1,0 +1,27 @@
+{% extends "panel/layout.html" %}
+{% block ptitle %}Kampanya{% endblock %}
+{% block content %}
+<h1>Sadakat kampanyası</h1>
+<p class="muted">Müşteri telefon numarasıyla tanınır. Onayladığın her sipariş kartına 1 damga ekler; damgalar dolunca müşteri ödülü kazanır, sana da siparişin içinde "ödülü var" diye görünür.</p>
+<form method="post" class="card form">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <label class="switch"><input type="checkbox" name="reward_active" value="1" {% if b.reward_active %}checked{% endif %}><span>Kampanya açık</span></label>
+  <div class="row2">
+    <label class="fld"><span>Kaç siparişte bir?</span><input name="reward_every" type="number" min="2" max="100" value="{{ b.reward_every }}" required>
+      <small>ör. 6 yazarsan 6., 12., 18. siparişte ödül</small></label>
+    <label class="fld"><span>Ödül ne?</span><input name="reward_text" value="{{ b.reward_text }}" maxlength="120" placeholder="ör. 1 kg zeytin">
+      <small>Mağazada "Her 6 siparişe 1 kg zeytin hediye" yazar</small></label>
+  </div>
+  <label class="fld"><span>Sayılması için en az sipariş tutarı (TL)</span><input name="reward_min_total" inputmode="decimal" value="{{ b.reward_min_total|replace('.00', '') }}">
+    <small>0 = her sipariş sayılır. Teslimat ücreti tutara dahil edilmez.</small></label>
+  <div class="preview"><small>Mağazada görünecek:</small><b id="cp-prev">{{ rule or 'Kampanya kapalı — mağazada görünmez.' }}</b></div>
+  <button class="btn-primary" type="submit">Kaydet</button>
+</form>
+<section class="card stats">
+  <div><b>{{ stats.earned or 0 }}</b><span>kazanılan ödül</span></div>
+  <div><b>{{ stats.given or 0 }}</b><span>verilen ödül</span></div>
+  <div><b>{{ (stats.earned or 0) - (stats.given or 0) }}</b><span>bekleyen</span></div>
+</section>
+<p><a href="{{ url_for('panel.customers') }}">Ödülü bekleyen müşterileri gör →</a></p>
+<p class="muted">Kuralı sonradan değiştirirsen eski siparişler korunur; damga sayısı yeni kurala göre hesaplanır. Reddedilen ve iptal edilen siparişler sayılmaz.</p>
+{% endblock %}

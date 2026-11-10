@@ -1,0 +1,113 @@
+"""Platform yöneticisi: işletme açma, domain bağlama, hesabı açıp kapatma, şifre sıfırlama."""
+import secrets
+
+from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from werkzeug.security import generate_password_hash
+
+import core
+import db
+from app import admin_required, platform_hosts
+
+bp = Blueprint("admin", __name__, url_prefix="/admin")
+
+RESERVED = {"admin", "panel", "login", "logout", "api", "static", "img", "s", "o", "health", "www"}
+
+
+def _validate(name, slug, domain, biz_id=None):
+    errors = []
+    if len(name) < 2:
+        errors.append("İşletme adını yaz.")
+    if not core.SLUG_RE.match(slug) or slug in RESERVED:
+        errors.append("Kısa ad 3-40 karakter, küçük harf, rakam ve tire olmalı (ör. ege-zeytin).")
+    elif db.one("SELECT id FROM businesses WHERE slug = ? AND id <> ?", (slug, biz_id or 0)):
+        errors.append("Bu kısa ad başka işletmede kullanılıyor.")
+    if domain:
+        if not core.valid_domain(domain):
+            errors.append("Domain geçersiz (ör. egezeytin.com).")
+        elif domain in platform_hosts():
+            errors.append("Platformun kendi domaini bir işletmeye bağlanamaz.")
+        elif db.one("SELECT id FROM businesses WHERE custom_domain = ? AND id <> ?", (domain, biz_id or 0)):
+            errors.append("Bu domain başka işletmeye bağlı.")
+    return errors
+
+
+@bp.get("/")
+@admin_required
+def index():
+    rows = db.query(
+        "SELECT b.*, (SELECT COUNT(*) FROM orders o WHERE o.business_id = b.id) AS orders, "
+        "(SELECT COUNT(*) FROM orders o WHERE o.business_id = b.id AND o.status = 'pending') AS pending, "
+        "(SELECT email FROM users u WHERE u.business_id = b.id ORDER BY u.id LIMIT 1) AS owner_email "
+        "FROM businesses b ORDER BY b.id DESC")
+    return render_template("admin/index.html", rows=rows)
+
+
+@bp.route("/new", methods=["GET", "POST"])
+@admin_required
+def new():
+    form = {"name": "", "slug": "", "domain": "", "owner_name": "", "email": ""}
+    password = None
+    if request.method == "POST":
+        f = request.form
+        form = {"name": (f.get("name") or "").strip()[:80],
+                "slug": (f.get("slug") or "").strip().lower() or core.slugify(f.get("name")),
+                "domain": core.normalize_domain(f.get("domain")),
+                "owner_name": (f.get("owner_name") or "").strip()[:80],
+                "email": (f.get("email") or "").strip().lower()}
+        errors = _validate(form["name"], form["slug"], form["domain"])
+        if "@" not in form["email"] or "." not in form["email"].split("@")[-1]:
+            errors.append("İşletme sahibinin e-postasını yaz.")
+        elif db.one("SELECT id FROM users WHERE email = ?", (form["email"],)):
+            errors.append("Bu e-postayla zaten bir hesap var.")
+        if errors:
+            for e in errors:
+                flash(e, "error")
+        else:
+            password = (f.get("password") or "").strip() or secrets.token_urlsafe(7)
+            try:
+                biz_id = db.insert("businesses", {"slug": form["slug"], "name": form["name"],
+                                                  "custom_domain": form["domain"] or None, "active": 1,
+                                                  "created_at": core.now()})
+                db.insert("users", {"business_id": biz_id, "email": form["email"], "name": form["owner_name"],
+                                    "password_hash": generate_password_hash(password), "is_admin": 0,
+                                    "created_at": core.now()})
+                db.commit()
+            except Exception:
+                db.rollback()
+                raise
+            return render_template("admin/created.html", biz=core.business_by_slug(form["slug"]),
+                                   email=form["email"], password=password)
+    return render_template("admin/new.html", form=form)
+
+
+@bp.route("/<int:biz_id>", methods=["GET", "POST"])
+@admin_required
+def edit(biz_id):
+    b = db.one("SELECT * FROM businesses WHERE id = ?", (biz_id,))
+    if not b:
+        abort(404)
+    owner = db.one("SELECT * FROM users WHERE business_id = ? ORDER BY id LIMIT 1", (biz_id,))
+    new_password = None
+    if request.method == "POST":
+        f = request.form
+        action = f.get("action")
+        if action == "save":
+            name = (f.get("name") or "").strip()[:80]
+            slug = (f.get("slug") or "").strip().lower()
+            domain = core.normalize_domain(f.get("domain"))
+            errors = _validate(name, slug, domain, biz_id)
+            if errors:
+                for e in errors:
+                    flash(e, "error")
+            else:
+                db.update("businesses", biz_id, {"name": name, "slug": slug, "custom_domain": domain or None,
+                                                 "active": 1 if f.get("active") else 0})
+                db.commit()
+                flash("Kaydedildi.", "ok")
+                return redirect(url_for("admin.edit", biz_id=biz_id))
+        elif action == "reset" and owner:
+            new_password = secrets.token_urlsafe(7)
+            db.update("users", owner["id"], {"password_hash": generate_password_hash(new_password)})
+            db.commit()
+        b = db.one("SELECT * FROM businesses WHERE id = ?", (biz_id,))
+    return render_template("admin/edit.html", b=b, owner=owner, new_password=new_password)

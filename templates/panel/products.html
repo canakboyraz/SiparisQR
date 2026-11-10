@@ -1,0 +1,52 @@
+{% extends "panel/layout.html" %}
+{% block ptitle %}Ürünler{% endblock %}
+{% block content %}
+<div class="pn-head"><h1>Ürünler</h1><a class="btn-primary" href="{{ url_for('panel.product_form') }}">+ Ürün ekle</a></div>
+{% if not groups %}
+<div class="pn-empty"><p><b>Henüz ürün yok.</b></p><p>İlk ürününü ekle: adı, fiyatı, birimi (ör. 1 kg, 500 ml) ve bir fotoğraf yeter.</p></div>
+{% endif %}
+{% for cat, items in groups %}
+<section class="card">
+  <h2>{{ cat.name }} <small class="muted">· {{ items|length }} ürün</small></h2>
+  <ul class="pl">
+    {% for p in items %}
+    <li id="p{{ p.id }}" class="{{ 'is-hidden' if not p.visible }} {{ 'is-out' if not p.available }}">
+      <a class="pl-main" href="{{ url_for('panel.product_form', product_id=p.id) }}">
+        {% if p.image_id %}<img src="/img/{{ p.image_id }}" alt="" loading="lazy">{% else %}<span class="pl-noimg">{{ p.name[:1]|upper }}</span>{% endif %}
+        <span><b>{{ p.name }}</b><small>{{ p.unit }}{% if p.unit %} · {% endif %}{{ tl(p.price) }}{% if not p.visible %} · gizli{% endif %}</small></span>
+      </a>
+      <div class="pl-act">
+        <form method="post" action="{{ url_for('panel.product_toggle', product_id=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}">
+          <button class="chip {{ 'is-on' if p.available else 'is-off' }}" type="submit" title="Stok durumunu değiştir">{{ 'Satışta' if p.available else 'Tükendi' }}</button></form>
+        <form method="post" action="{{ url_for('panel.product_move', product_id=p.id) }}" class="mv"><input type="hidden" name="csrf" value="{{ csrf_token() }}">
+          <button name="dir" value="up" type="submit" aria-label="Yukarı taşı">↑</button><button name="dir" value="down" type="submit" aria-label="Aşağı taşı">↓</button></form>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endfor %}
+
+<section class="card">
+  <h2>Kategoriler</h2>
+  <ul class="cl">
+    {% for c in cats %}
+    <li>
+      <form method="post" action="{{ url_for('panel.categories') }}" class="inline-form">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="id" value="{{ c.id }}">
+        <input name="name" value="{{ c.name }}" maxlength="60" aria-label="Kategori adı">
+        <button class="btn-sm" name="action" value="rename" type="submit">Kaydet</button>
+        <button class="btn-icon" name="action" value="up" type="submit" aria-label="Yukarı">↑</button>
+        <button class="btn-icon" name="action" value="down" type="submit" aria-label="Aşağı">↓</button>
+        <button class="btn-icon is-danger" name="action" value="delete" type="submit" aria-label="Sil" onclick="return confirm('Kategori silinsin mi? Ürünler silinmez, kategorisiz kalır.')">×</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  <form method="post" action="{{ url_for('panel.categories') }}" class="inline-form">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input name="new_category" maxlength="60" placeholder="Yeni kategori (ör. Zeytinyağları)" required>
+    <button class="btn-sm" name="action" value="add" type="submit">Ekle</button>
+  </form>
+</section>
+{% endblock %}

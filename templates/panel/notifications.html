@@ -1,0 +1,30 @@
+{% extends "panel/layout.html" %}
+{% block ptitle %}Bildirimler{% endblock %}
+{% block content %}
+<h1>Telefon bildirimleri</h1>
+<section class="card" id="np" data-vapid="{{ vapid }}" data-sub="{{ url_for('panel.push_subscribe') }}" data-unsub="{{ url_for('panel.push_unsubscribe') }}" data-test="{{ url_for('panel.push_test') }}">
+  <p id="np-state" class="np-state">Kontrol ediliyor…</p>
+  <div class="act-row">
+    <button class="btn-primary" type="button" id="np-on" hidden>Bu cihazda bildirimleri aç</button>
+    <button class="btn-ghost" type="button" id="np-test" hidden>Deneme bildirimi gönder</button>
+    <button class="btn-link" type="button" id="np-off" hidden>Bu cihazda kapat</button>
+  </div>
+  <div class="np-ios" id="np-ios" hidden>
+    <b>iPhone'da bildirim için önce paneli ana ekrana ekle:</b>
+    <ol><li>Safari'de alttaki <b>Paylaş</b> düğmesine dokun.</li><li><b>Ana Ekrana Ekle</b>'yi seç.</li><li>Ana ekrandaki <b>Siparişler</b> simgesinden aç, giriş yap ve bu sayfaya dön.</li></ol>
+    <small>iOS 16.4 ve üstü gerekir.</small>
+  </div>
+</section>
+<section class="card">
+  <h2>Kayıtlı cihazlar</h2>
+  {% if not subs %}<p class="muted">Henüz kayıtlı cihaz yok.</p>{% endif %}
+  <ul class="dev">
+    {% for s in subs %}
+    <li><span>{{ 'iPhone' if 'iPhone' in s.user_agent else ('Android' if 'Android' in s.user_agent else ('Mac' if 'Mac' in s.user_agent else ('Windows' if 'Windows' in s.user_agent else 'Cihaz'))) }}
+      <small>{{ local_time(s.created_at, '%d.%m.%Y') }}</small></span>
+      <form method="post" action="{{ url_for('panel.push_unsubscribe') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="id" value="{{ s.id }}"><button class="btn-link is-danger" type="submit">Kaldır</button></form></li>
+    {% endfor %}
+  </ul>
+  <p class="muted">Siparişleri birden fazla kişi takip ediyorsa her telefonda bir kez "bildirimleri aç" yeterli.</p>
+</section>
+{% endblock %}

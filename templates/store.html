@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}{{ biz.name }} · Sipariş ver{% endblock %}
+{% block head %}<meta name="theme-color" content="{{ biz.accent }}">
+<meta name="description" content="{{ biz.tagline or biz.name }} — online sipariş">
+<style>:root{--accent:{{ biz.accent }}}</style>{% endblock %}
+{% block body_class %}store{% endblock %}
+{% block body %}
+<div id="st" data-config='{{ config|tojson }}'>
+  <header class="st-hero">
+    <div class="st-brand">
+      {% if biz.logo_id %}<img class="st-logo" src="/img/{{ biz.logo_id }}" alt="">
+      {% else %}<div class="st-logo st-logo-txt" aria-hidden="true">{{ biz.name[:1]|upper }}</div>{% endif %}
+      <div>
+        <h1>{{ biz.name }}</h1>
+        {% if biz.tagline %}<p>{{ biz.tagline }}</p>{% endif %}
+      </div>
+    </div>
+    {% if reward %}
+    <div class="st-reward" role="note">
+      <span class="st-reward-ico" aria-hidden="true">🎁</span>
+      <div><b>{{ reward }}</b><small>Siparişlerin telefon numarana kaydedilir, ödülün otomatik hesaplanır.</small></div>
+    </div>
+    {% endif %}
+    {% if not biz.ordering_open %}
+    <p class="st-closed">{{ biz.closed_message or "Şu an sipariş alınmıyor. Ürünlere göz atabilirsin." }}</p>
+    {% endif %}
+  </header>
+
+  {% if not groups %}
+  <section class="st-empty"><p>Ürünler çok yakında burada.</p></section>
+  {% else %}
+  {% if groups|length > 1 %}
+  <nav class="st-cats" aria-label="Kategoriler">{% for cat, items in groups %}<a href="#k{{ cat.id }}">{{ cat.name }}</a>{% endfor %}</nav>
+  {% endif %}
+  <main class="st-list">
+    {% for cat, items in groups %}
+    <section class="st-cat" id="k{{ cat.id }}">
+      {% if groups|length > 1 %}<h2>{{ cat.name }}</h2>{% endif %}
+      <div class="st-grid">
+      {% for p in items %}
+      <article class="st-item {{ 'is-out' if not p.available }}" data-id="{{ p.id }}">
+        <button type="button" class="st-item-open" data-open="{{ p.id }}" aria-label="{{ p.name }} detayları">
+          {% if p.image_id %}<img src="/img/{{ p.image_id }}" alt="" loading="lazy" decoding="async">
+          {% else %}<span class="st-noimg" aria-hidden="true">{{ p.name[:1]|upper }}</span>{% endif %}
+        </button>
+        <div class="st-item-body">
+          <h3>{{ p.name }}</h3>
+          {% if p.unit %}<span class="st-unit">{{ p.unit }}</span>{% endif %}
+          <div class="st-item-row">
+            <b class="st-price">{{ tl(p.price) }}</b>
+            {% if not p.available %}<span class="st-out">Tükendi</span>
+            {% elif biz.ordering_open %}
+            <div class="st-add" data-add="{{ p.id }}">
+              <button type="button" class="st-plus" data-act="add" aria-label="{{ p.name }} sepete ekle">+</button>
+              <div class="st-qty" hidden><button type="button" data-act="dec" aria-label="Azalt">−</button><b>0</b><button type="button" data-act="inc" aria-label="Artır">+</button></div>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </article>
+      {% endfor %}
+      </div>
+    </section>
+    {% endfor %}
+  </main>
+  {% endif %}
+
+  <footer class="st-foot">
+    {% if biz.phone %}<a href="tel:+90{{ biz.phone }}">{{ pretty_phone(biz.phone) }}</a>{% endif %}
+    {% if biz.whatsapp %}<a href="https://wa.me/90{{ biz.whatsapp }}" rel="noopener">WhatsApp</a>{% endif %}
+    <span>{{ platform_name }} ile sipariş</span>
+  </footer>
+</div>
+
+<button type="button" class="st-cartbar" id="st-cartbar" hidden>
+  <span class="st-count" id="st-count">0</span><span>Sepeti gör</span><b id="st-total">0 TL</b>
+</button>
+
+<div class="sheet-bg" id="st-detail" hidden>
+  <div class="sheet st-detail" role="dialog" aria-modal="true" aria-labelledby="st-d-name">
+    <button class="sheet-x" type="button" data-close aria-label="Kapat">×</button>
+    <img id="st-d-img" alt="" hidden>
+    <div class="st-d-body">
+      <h2 id="st-d-name"></h2><span class="st-unit" id="st-d-unit"></span>
+      <p id="st-d-desc"></p>
+      <div class="st-d-row"><b id="st-d-price"></b>
+        <div class="st-qty is-big" id="st-d-qtybox"><button type="button" id="st-d-dec" aria-label="Azalt">−</button><b id="st-d-qty">1</b><button type="button" id="st-d-inc" aria-label="Artır">+</button></div>
+      </div>
+      <button class="btn-primary" type="button" id="st-d-add">Sepete ekle</button>
+      <p class="st-d-out" id="st-d-out" hidden>Bu ürün şu an tükendi.</p>
+    </div>
+  </div>
+</div>
+
+<div class="sheet-bg" id="st-cart" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="st-cart-title">
+    <button class="sheet-x" type="button" data-close aria-label="Kapat">×</button>
+    <form id="st-form" novalidate>
+      <h2 id="st-cart-title">Sepetin</h2>
+      <ul class="st-lines" id="st-lines"></ul>
+
+      {% if biz.delivery and biz.pickup %}
+      <fieldset class="seg" id="st-ful">
+        <legend>Teslimat</legend>
+        <label><input type="radio" name="fulfilment" value="delivery" checked><span>Adrese teslim</span></label>
+        <label><input type="radio" name="fulfilment" value="pickup"><span>Gel al</span></label>
+      </fieldset>
+      {% else %}
+      <input type="hidden" name="fulfilment" value="{{ 'delivery' if biz.delivery else 'pickup' }}">
+      {% endif %}
+
+      <label class="fld"><span>Ad soyad</span><input name="name" autocomplete="name" maxlength="80" required></label>
+      <label class="fld"><span>Telefon</span><input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="05XX XXX XX XX" maxlength="20" required></label>
+      {% if biz.delivery %}
+      <label class="fld" id="st-addr"><span>Teslimat adresi</span><textarea name="address" rows="3" maxlength="400" autocomplete="street-address" placeholder="Mahalle, sokak, bina no, daire, ilçe"></textarea>
+        {% if biz.delivery_note %}<small>{{ biz.delivery_note }}</small>{% endif %}</label>
+      {% endif %}
+      {% if biz.pickup and biz.pickup_address %}
+      <p class="st-pickup" id="st-pickup" {% if biz.delivery %}hidden{% endif %}>Teslim alma adresi: <b>{{ biz.pickup_address }}</b></p>
+      {% endif %}
+
+      <fieldset class="seg" id="st-pay">
+        <legend>Ödeme</legend>
+        {% if biz.pay_cash %}<label><input type="radio" name="payment" value="cash" {% if not biz.pay_iban %}checked{% endif %}><span>Nakit<small>teslimde</small></span></label>{% endif %}
+        {% if biz.pay_iban %}<label><input type="radio" name="payment" value="iban" {% if not biz.pay_cash %}checked{% endif %}><span>IBAN<small>havale / EFT</small></span></label>{% endif %}
+      </fieldset>
+      <label class="fld"><span>Not <small>(isteğe bağlı)</small></span><textarea name="note" rows="2" maxlength="400" placeholder="ör. Zile basmayın, arayın"></textarea></label>
+
+      <dl class="st-sum">
+        <div><dt>Ara toplam</dt><dd id="st-sub">0 TL</dd></div>
+        <div id="st-feerow"><dt>Teslimat</dt><dd id="st-fee">0 TL</dd></div>
+        <div class="is-total"><dt>Toplam</dt><dd id="st-grand">0 TL</dd></div>
+      </dl>
+      <p class="st-err" id="st-err" role="alert" hidden></p>
+      <label class="st-kvkk"><input type="checkbox" name="kvkk" required> Adımın, telefonumun ve adresimin siparişim için {{ biz.name }} ile paylaşılmasını kabul ediyorum.</label>
+      <button class="btn-primary" type="submit" id="st-send">Siparişi gönder</button>
+      <p class="st-after">Siparişin önce {{ biz.name }} tarafından onaylanır. Onay durumunu bir sonraki ekranda göreceksin.</p>
+    </form>
+  </div>
+</div>
+<script>window.PRODUCTS = {{ products|tojson }};</script>
+{% endblock %}
+{% block scripts %}<script src="/static/js/store.js?v=1" defer></script>{% endblock %}

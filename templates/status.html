@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Sipariş #{{ order.id }} · {{ biz.name }}{% endblock %}
+{% block head %}<meta name="robots" content="noindex"><meta name="theme-color" content="{{ biz.accent }}">
+<style>:root{--accent:{{ biz.accent }}}</style>{% endblock %}
+{% block body_class %}store{% endblock %}
+{% block body %}
+<main class="os" id="os" data-poll="{{ request.path }}.json" data-status="{{ order.status }}">
+  <a class="os-back" href="{{ g.base }}/">← {{ biz.name }}</a>
+
+  <section class="os-card os-state is-{{ order.status }}" id="os-state" aria-live="polite">
+    <div class="os-ico" aria-hidden="true"></div>
+    <p class="os-no">Sipariş #{{ order.id }}</p>
+    <h1 id="os-label">{{ data.label }}</h1>
+    <p id="os-text">
+      {% if order.status == 'pending' %}Siparişin {{ biz.name }}'e ulaştı. Onaylandığında bu ekran kendiliğinden güncellenir.
+      {% elif order.status == 'approved' %}Siparişin onaylandı ve hazırlanıyor.
+      {% elif order.status == 'on_the_way' %}{{ 'Siparişin yola çıktı.' if order.fulfilment == 'delivery' else 'Siparişin hazır, gelip alabilirsin.' }}
+      {% elif order.status == 'delivered' %}Siparişin teslim edildi. Afiyet olsun!
+      {% elif order.status == 'rejected' %}Siparişin onaylanmadı.
+      {% else %}Sipariş iptal edildi.{% endif %}
+    </p>
+    <p class="os-msg" id="os-msg" {% if not (order.owner_message or order.reject_reason) %}hidden{% endif %}>{{ order.owner_message or order.reject_reason }}</p>
+    <ol class="os-steps" aria-label="Sipariş adımları">
+      {% set steps = [('pending','Alındı'),('approved','Onaylandı'),('on_the_way', 'Yolda' if order.fulfilment == 'delivery' else 'Hazır'),('delivered','Teslim')] %}
+      {% for key, label in steps %}<li data-step="{{ key }}">{{ label }}</li>{% endfor %}
+    </ol>
+  </section>
+
+  {% if order.payment == 'iban' and order.status not in ('rejected', 'cancelled') %}
+  <section class="os-card os-iban" id="os-iban" {% if order.paid %}hidden{% endif %}>
+    <h2>Ödeme bilgileri</h2>
+    <p>Toplam <b>{{ tl(order.total) }}</b> tutarı aşağıdaki hesaba gönder. Açıklamaya <b>Sipariş {{ order.id }}</b> yaz.</p>
+    <div class="iban-box">
+      <small>{{ biz.iban_bank }}{% if biz.iban_bank %} · {% endif %}{{ biz.iban_holder }}</small>
+      <code id="iban">{{ pretty_iban(biz.iban) }}</code>
+      <button type="button" class="btn-ghost" data-copy="{{ biz.iban }}">IBAN'ı kopyala</button>
+    </div>
+    <p class="os-hint">{{ biz.name }} ödemeyi görünce işaretler. Sipariş onayı ödemeden bağımsızdır.</p>
+  </section>
+  <p class="os-paid" id="os-paid" {% if not order.paid %}hidden{% endif %}>✓ Ödemen alındı</p>
+  {% elif order.payment == 'cash' %}
+  <p class="os-note">Ödeme: <b>nakit, teslimde</b> · {{ tl(order.total) }}</p>
+  {% endif %}
+
+  <section class="os-card os-loyal" id="os-loyal" {% if not data.card %}hidden{% endif %}>
+    <h2>Sadakat kartın</h2>
+    <p id="os-loyal-text"></p>
+    <div class="stamps" id="os-stamps" aria-hidden="true"></div>
+    <div class="os-gift" id="os-gift" hidden></div>
+  </section>
+
+  <section class="os-card">
+    <h2>Sipariş özeti</h2>
+    <ul class="os-lines">
+      {% for l in lines %}<li><span>{{ l.qty }} × {{ l.name }}{% if l.unit %} <small>({{ l.unit }})</small>{% endif %}</span><b>{{ tl(l.line_total) }}</b></li>{% endfor %}
+      {% if order.fulfilment == 'delivery' %}<li><span>Teslimat</span><b>{{ tl(order.delivery_fee) if order.delivery_fee|float > 0 else 'Ücretsiz' }}</b></li>{% endif %}
+      <li class="is-total"><span>Toplam</span><b>{{ tl(order.total) }}</b></li>
+    </ul>
+    <dl class="os-meta">
+      <div><dt>Teslimat</dt><dd>{{ FULFILMENT[order.fulfilment] }}{% if order.fulfilment == 'pickup' and biz.pickup_address %} · {{ biz.pickup_address }}{% endif %}</dd></div>
+      {% if order.address %}<div><dt>Adres</dt><dd>{{ order.address }}</dd></div>{% endif %}
+      <div><dt>Ödeme</dt><dd>{{ PAYMENT[order.payment] }}</dd></div>
+      {% if order.note %}<div><dt>Not</dt><dd>{{ order.note }}</dd></div>{% endif %}
+      <div><dt>Tarih</dt><dd>{{ local_time(order.created_at) }}</dd></div>
+    </dl>
+  </section>
+
+  <p class="os-contact">
+    Sorun mu var?
+    {% if biz.whatsapp %}<a href="https://wa.me/90{{ biz.whatsapp }}?text={{ ('Merhaba, ' ~ order.id ~ ' numaralı siparişim hakkında yazıyorum.')|urlencode }}" rel="noopener">WhatsApp'tan yaz</a>{% endif %}
+    {% if biz.phone %}<a href="tel:+90{{ biz.phone }}">Ara</a>{% endif %}
+  </p>
+  <p class="os-keep">Bu sayfanın adresini saklayabilirsin; siparişini buradan takip edersin.</p>
+</main>
+<script>window.ORDER = {{ data|tojson }};</script>
+{% endblock %}
+{% block scripts %}<script src="/static/js/status.js?v=1" defer></script>{% endblock %}

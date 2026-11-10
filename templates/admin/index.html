@@ -1,0 +1,14 @@
+{% extends "admin/layout.html" %}
+{% block content %}
+<div class="pn-head"><h1>İşletmeler</h1><a class="btn-primary" href="{{ url_for('admin.new') }}">+ Yeni işletme</a></div>
+{% if not rows %}<div class="pn-empty"><p>Henüz işletme yok. İlk müşterini ekle.</p></div>{% endif %}
+<ul class="ol">
+  {% for b in rows %}
+  <li><a class="ol-row" href="{{ url_for('admin.edit', biz_id=b.id) }}">
+    <div class="ol-main"><b>{{ b.name }}{% if not b.active %} · <span class="pill is-cancelled">kapalı</span>{% endif %}</b>
+      <span>{{ b.custom_domain or ('/s/' ~ b.slug) }}</span><small>{{ b.owner_email }}</small></div>
+    <div class="ol-side"><b>{{ b.orders }} sipariş</b>{% if b.pending %}<span class="pill is-pending">{{ b.pending }} bekliyor</span>{% endif %}</div>
+  </a></li>
+  {% endfor %}
+</ul>
+{% endblock %}

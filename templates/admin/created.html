@@ -1,0 +1,15 @@
+{% extends "admin/layout.html" %}
+{% block content %}
+<h1>{{ biz.name }} açıldı</h1>
+<section class="card">
+  <p>Bu bilgileri işletme sahibine ilet. Şifre bir daha gösterilmez (gerekirse sıfırlarsın).</p>
+  <dl class="kv">
+    <div><dt>Panel</dt><dd>{{ request.host_url }}login</dd></div>
+    <div><dt>E-posta</dt><dd>{{ email }}</dd></div>
+    <div><dt>Şifre</dt><dd><code>{{ password }}</code></dd></div>
+    <div><dt>Mağaza</dt><dd>{{ ('https://' ~ biz.custom_domain ~ '/') if biz.custom_domain else (request.host_url ~ 's/' ~ biz.slug ~ '/') }}</dd></div>
+  </dl>
+</section>
+{% if biz.custom_domain %}{% include "admin/_dns.html" %}{% endif %}
+<p><a class="btn-primary" href="{{ url_for('admin.edit', biz_id=biz.id) }}">İşletmeye git</a></p>
+{% endblock %}

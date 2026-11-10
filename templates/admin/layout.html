@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Yönetim · {{ platform_name }}{% endblock %}
+{% block body_class %}panel admin{% endblock %}
+{% block body %}
+<header class="pn-top">
+  <a class="pn-brand" href="{{ url_for('admin.index') }}">{{ platform_name }} · Yönetim</a>
+  <div class="pn-top-r"><form method="post" action="{{ url_for('auth.logout') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="pn-out" type="submit">Çıkış</button></form></div>
+</header>
+<main class="pn-main">{% include "_flash.html" %}{% block content %}{% endblock %}</main>
+{% endblock %}

@@ -1,0 +1,29 @@
+{% extends "panel/layout.html" %}
+{% block ptitle %}QR kod{% endblock %}
+{% block content %}
+<h1>QR kod</h1>
+<section class="card qr-card">
+  <div class="qr" id="qr" data-url="{{ store_url }}" aria-label="Mağaza QR kodu"></div>
+  <div>
+    <p>Müşterin bu kodu okutunca mağazan açılır.</p>
+    <p class="qr-url"><a href="{{ store_url }}" target="_blank" rel="noopener">{{ store_url }}</a></p>
+    <div class="act-row">
+      <button class="btn-ghost" type="button" data-copy="{{ store_url }}">Linki kopyala</button>
+      <a class="btn-ghost" id="qr-dl" download="qr-{{ biz.slug }}.svg" href="#">QR'ı indir (SVG)</a>
+      <a class="btn-primary" href="{{ url_for('panel.qr_print') }}" target="_blank">Afiş yazdır</a>
+    </div>
+  </div>
+</section>
+<p class="muted">İpucu: Linki Instagram profiline, WhatsApp durumuna ve Google işletme kaydına da ekleyebilirsin. Aynı adres her yerde çalışır.</p>
+{% endblock %}
+{% block pscripts %}<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<script>
+(function () {
+  var box = document.getElementById("qr");
+  if (!window.qrcode) { box.textContent = "QR yüklenemedi. İnternet bağlantını kontrol et."; return; }
+  var q = qrcode(0, "M"); q.addData(box.getAttribute("data-url")); q.make();
+  var svg = q.createSvgTag({ cellSize: 8, margin: 2, scalable: true });
+  box.innerHTML = svg;
+  document.getElementById("qr-dl").href = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+})();
+</script>{% endblock %}

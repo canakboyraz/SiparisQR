@@ -1,0 +1,26 @@
+{% extends "admin/layout.html" %}
+{% block content %}
+<a class="pn-back" href="{{ url_for('admin.index') }}">← İşletmeler</a>
+<h1>{{ b.name }}</h1>
+{% if new_password %}<p class="flash is-ok">Yeni şifre: <code>{{ new_password }}</code> — işletme sahibine ilet.</p>{% endif %}
+<form method="post" class="card form">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="action" value="save">
+  <label class="fld"><span>İşletme adı</span><input name="name" value="{{ b.name }}" required></label>
+  <label class="fld"><span>Kısa ad</span><input name="slug" value="{{ b.slug }}" pattern="[a-z0-9-]+" required></label>
+  <label class="fld"><span>Kendi domaini</span><input name="domain" value="{{ b.custom_domain or '' }}" placeholder="egezeytin.com"></label>
+  <label class="switch"><input type="checkbox" name="active" value="1" {% if b.active %}checked{% endif %}><span>Hesap açık (kapalıysa mağaza ve panel çalışmaz)</span></label>
+  <button class="btn-primary" type="submit">Kaydet</button>
+</form>
+<section class="card">
+  <h2>Adresler</h2>
+  <dl class="kv">
+    <div><dt>Mağaza</dt><dd><a href="/s/{{ b.slug }}/" target="_blank">/s/{{ b.slug }}/</a>{% if b.custom_domain %} · <a href="https://{{ b.custom_domain }}/" target="_blank">{{ b.custom_domain }}</a>{% endif %}</dd></div>
+    <div><dt>Giriş</dt><dd>{{ owner.email if owner else '—' }}</dd></div>
+  </dl>
+  {% if owner %}
+  <form method="post" onsubmit="return confirm('Şifre sıfırlansın mı?')"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="action" value="reset">
+    <button class="btn-ghost" type="submit">Şifreyi sıfırla</button></form>
+  {% endif %}
+</section>
+{% if b.custom_domain %}{% include "admin/_dns.html" %}{% endif %}
+{% endblock %}

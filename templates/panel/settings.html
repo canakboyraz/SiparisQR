@@ -1,0 +1,56 @@
+{% extends "panel/layout.html" %}
+{% block ptitle %}Ayarlar{% endblock %}
+{% block content %}
+<h1>Ayarlar</h1>
+<form method="post" enctype="multipart/form-data" class="form">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <section class="card">
+    <h2>Sipariş alma</h2>
+    <label class="switch"><input type="checkbox" name="ordering_open" value="1" {% if b.ordering_open %}checked{% endif %}><span>Sipariş alıyorum</span></label>
+    <label class="fld"><span>Kapalıyken müşteriye gösterilecek mesaj</span><input name="closed_message" value="{{ b.closed_message }}" maxlength="200" placeholder="ör. Bugün sipariş almıyoruz, yarın 09:00'da açığız."></label>
+  </section>
+
+  <section class="card">
+    <h2>Mağaza</h2>
+    <label class="fld"><span>İşletme adı</span><input name="name" value="{{ b.name }}" maxlength="80" required></label>
+    <label class="fld"><span>Kısa tanıtım</span><input name="tagline" value="{{ b.tagline }}" maxlength="160" placeholder="ör. Ayvalık'tan sofranıza, bu yılın hasadı"></label>
+    <div class="row2">
+      <label class="fld"><span>Telefon</span><input name="phone" type="tel" value="{{ ('0' ~ b.phone) if b.phone and b.phone|length == 10 else b.phone }}" placeholder="05XX XXX XX XX"></label>
+      <label class="fld"><span>WhatsApp</span><input name="whatsapp" type="tel" value="{{ ('0' ~ b.whatsapp) if b.whatsapp else '' }}" placeholder="05XX XXX XX XX"></label>
+    </div>
+    <div class="row2">
+      <label class="fld"><span>Ana renk</span><input name="accent" type="color" value="{{ b.accent }}"></label>
+      <div class="fld"><span>Logo</span>
+        {% if b.logo_id %}<img class="thumb is-logo" src="/img/{{ b.logo_id }}" alt=""><label class="check"><input type="checkbox" name="remove_logo" value="1"> Logoyu kaldır</label>{% endif %}
+        <input type="file" name="logo" accept="image/*"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Ödeme</h2>
+    <label class="check"><input type="checkbox" name="pay_cash" value="1" {% if b.pay_cash %}checked{% endif %}> Nakit (teslimde / teslim alırken)</label>
+    <label class="check"><input type="checkbox" name="pay_iban" value="1" {% if b.pay_iban %}checked{% endif %}> IBAN ile havale / EFT</label>
+    <label class="fld"><span>IBAN</span><input name="iban" value="{{ pretty_iban(b.iban) if b.iban else '' }}" placeholder="TR00 0000 0000 0000 0000 0000 00" autocomplete="off" spellcheck="false"></label>
+    <div class="row2">
+      <label class="fld"><span>Hesap sahibi</span><input name="iban_holder" value="{{ b.iban_holder }}" maxlength="80"></label>
+      <label class="fld"><span>Banka</span><input name="iban_bank" value="{{ b.iban_bank }}" maxlength="60" placeholder="ör. Ziraat Bankası"></label>
+    </div>
+    <small class="muted">Müşteri IBAN'ı seçerse sipariş sonrası ekranında bu bilgiler ve "açıklamaya Sipariş No yaz" uyarısı görünür.</small>
+  </section>
+
+  <section class="card">
+    <h2>Teslimat</h2>
+    <label class="check"><input type="checkbox" name="delivery" value="1" {% if b.delivery %}checked{% endif %}> Adrese teslim / kargo</label>
+    <label class="check"><input type="checkbox" name="pickup" value="1" {% if b.pickup %}checked{% endif %}> Gel al</label>
+    <div class="row3">
+      <label class="fld"><span>Teslimat ücreti</span><input name="delivery_fee" inputmode="decimal" value="{{ b.delivery_fee|replace('.00', '') }}"></label>
+      <label class="fld"><span>Şu tutar üstü ücretsiz</span><input name="free_delivery_over" inputmode="decimal" value="{{ b.free_delivery_over|replace('.00', '') }}"><small>0 = yok</small></label>
+      <label class="fld"><span>En az sipariş</span><input name="min_order" inputmode="decimal" value="{{ b.min_order|replace('.00', '') }}"><small>0 = yok</small></label>
+    </div>
+    <label class="fld"><span>Teslimat notu</span><input name="delivery_note" value="{{ b.delivery_note }}" maxlength="200" placeholder="ör. Kocaeli içi aynı gün, diğer iller 2-3 gün kargo"></label>
+    <label class="fld"><span>Gel al adresi</span><input name="pickup_address" value="{{ b.pickup_address }}" maxlength="200" placeholder="ör. Dumlupınar Mah. ... No: 5"></label>
+  </section>
+  <button class="btn-primary btn-big" type="submit">Kaydet</button>
+</form>
+<p><a href="{{ url_for('auth.password') }}">Şifremi değiştir</a></p>
+{% endblock %}

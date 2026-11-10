@@ -1,0 +1,39 @@
+{% extends "panel/layout.html" %}
+{% block ptitle %}Siparişler{% endblock %}
+{% block content %}
+<div class="pn-head" id="orders" data-latest="{{ latest }}" data-poll="{{ url_for('panel.poll') }}">
+  <h1>Siparişler</h1>
+  <span class="pn-live" title="Sayfa kendiliğinden yenilenir"><i></i>Canlı</span>
+</div>
+<nav class="pn-seg" aria-label="Sipariş durumu">
+  {% for key, (label, _) in tabs.items() %}
+  <a href="{{ url_for('panel.orders', tab=key) }}" class="{{ 'is-on' if tab == key }}">{{ label }}{% if key != 'done' and counts[key] %} <em>{{ counts[key] }}</em>{% endif %}</a>
+  {% endfor %}
+</nav>
+<p class="pn-new" id="pn-new" hidden><a href="{{ url_for('panel.orders', tab='pending') }}">Yeni sipariş geldi · yenile</a></p>
+
+{% if not rows %}
+<div class="pn-empty">
+  {% if tab == 'pending' %}<p><b>Onay bekleyen sipariş yok.</b></p><p>Yeni sipariş gelince bu sayfa kendiliğinden yenilenir ve bildirimi açtıysan telefonuna da düşer.</p>
+  {% elif tab == 'active' %}<p>Hazırlanan sipariş yok.</p>{% else %}<p>Henüz biten sipariş yok.</p>{% endif %}
+</div>
+{% else %}
+<ul class="ol">
+  {% for o in rows %}
+  <li>
+    <a class="ol-row is-{{ o.status }}" href="{{ url_for('panel.order', order_id=o.id) }}">
+      <div class="ol-main">
+        <b>#{{ o.id }} · {{ o.customer_name }}</b>
+        <span>{{ FULFILMENT[o.fulfilment] }} · {{ PAYMENT[o.payment] }}{% if o.payment == 'iban' %} · {{ 'ödendi' if o.paid else 'ödeme bekleniyor' }}{% endif %}</span>
+        <small>{{ local_time(o.created_at) }}{% if o.customer_id in has_reward %} · <span class="tag-gift">🎁 ödülü var</span>{% endif %}</small>
+      </div>
+      <div class="ol-side">
+        <b>{{ tl(o.total) }}</b>
+        <span class="pill is-{{ o.status }}">{{ STATUS[o.status] }}</span>
+      </div>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

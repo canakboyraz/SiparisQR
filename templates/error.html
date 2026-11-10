@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}{{ code }}{% endblock %}
+{% block body_class %}plain{% endblock %}
+{% block body %}
+<main class="auth">
+  <h1>{% if code == 404 %}Bulunamadı{% elif code == 403 %}Erişim yok{% else %}Bir sorun oldu{% endif %}</h1>
+  <p>{{ message if message and 'browser' not in message and 'server' not in message else ('Aradığın sayfa yok ya da taşınmış.' if code == 404 else 'Lütfen tekrar dene.') }}</p>
+  <p><a href="javascript:history.back()">← Geri dön</a></p>
+</main>
+{% endblock %}

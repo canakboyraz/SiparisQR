@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Giriş · {{ platform_name }}{% endblock %}
+{% block head %}<link rel="manifest" href="/panel/manifest.webmanifest"><meta name="theme-color" content="#1F2A24">
+<meta name="apple-mobile-web-app-capable" content="yes"><link rel="apple-touch-icon" href="/static/icon-192.png">{% endblock %}
+{% block body_class %}plain{% endblock %}
+{% block body %}
+<main class="auth">
+  <h1>{{ platform_name }}</h1>
+  <p>İşletme paneline giriş</p>
+  {% include "_flash.html" %}
+  <form method="post" class="card">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <label class="fld"><span>E-posta</span><input type="email" name="email" value="{{ email }}" autocomplete="username" required autofocus></label>
+    <label class="fld"><span>Şifre</span><input type="password" name="password" autocomplete="current-password" required></label>
+    <button class="btn-primary" type="submit">Giriş yap</button>
+  </form>
+  <p class="muted">Şifreni unuttuysan platform yöneticisine yaz; yeni şifre verir.</p>
+</main>
+{% endblock %}

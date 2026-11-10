@@ -1,0 +1,18 @@
+{% extends "admin/layout.html" %}
+{% block content %}
+<a class="pn-back" href="{{ url_for('admin.index') }}">← İşletmeler</a>
+<h1>Yeni işletme</h1>
+<form method="post" class="card form">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <label class="fld"><span>İşletme adı</span><input name="name" value="{{ form.name }}" required placeholder="ör. Ege Zeytin"></label>
+  <label class="fld"><span>Kısa ad <small>(boş bırakırsan addan üretilir)</small></span><input name="slug" value="{{ form.slug }}" pattern="[a-z0-9-]+" placeholder="ege-zeytin">
+    <small>Domain bağlanana kadar mağaza adresi: /s/kısa-ad</small></label>
+  <label class="fld"><span>Kendi domaini <small>(isteğe bağlı, sonra da eklenir)</small></span><input name="domain" value="{{ form.domain }}" placeholder="egezeytin.com"></label>
+  <div class="row2">
+    <label class="fld"><span>İşletme sahibinin adı</span><input name="owner_name" value="{{ form.owner_name }}"></label>
+    <label class="fld"><span>Giriş e-postası</span><input name="email" type="email" value="{{ form.email }}" required></label>
+  </div>
+  <label class="fld"><span>Şifre <small>(boş bırakırsan rastgele üretilir)</small></span><input name="password" autocomplete="new-password"></label>
+  <button class="btn-primary" type="submit">İşletmeyi aç</button>
+</form>
+{% endblock %}

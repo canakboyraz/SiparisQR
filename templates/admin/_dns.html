@@ -1,0 +1,10 @@
+<section class="card">
+  <h2>Domain bağlama ({{ b.custom_domain if b is defined and b else biz.custom_domain }})</h2>
+  <ol class="steps">
+    <li>Railway → servis → <b>Settings → Networking → Custom Domain</b> → domaini ekle (hem <code>alanadi.com</code> hem <code>www.alanadi.com</code>). Railway bir hedef adres verir (…up.railway.app).</li>
+    <li>Domainin alındığı yerde (GoDaddy, İsimtescil, Natro, Cloudflare…) DNS kayıtlarını aç:
+      <br><code>www</code> → <b>CNAME</b> → Railway'in verdiği adres
+      <br><code>@</code> (kök) → CNAME/ALIAS destekliyorsa aynı adres; desteklemiyorsa Cloudflare'e taşı ya da kökü www'ye yönlendir.</li>
+    <li>Railway'de domainin yanında yeşil tik çıkınca (genelde 5-30 dk) SSL otomatik açılır, mağaza o adreste çalışır.</li>
+  </ol>
+</section>

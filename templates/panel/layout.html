@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}{% block ptitle %}Panel{% endblock %} · {{ biz.name }}{% endblock %}
+{% block head %}<link rel="manifest" href="/panel/manifest.webmanifest"><meta name="theme-color" content="#1F2A24">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Siparişler">
+<link rel="apple-touch-icon" href="/static/icon-192.png"><meta name="robots" content="noindex">{% endblock %}
+{% block body_class %}panel{% endblock %}
+{% block body %}
+{% set items = [
+  ('orders', 'panel.orders', 'Siparişler', '<path d="M4 5h16M4 12h16M4 19h10"/>'),
+  ('products', 'panel.products', 'Ürünler', '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>'),
+  ('campaign', 'panel.campaign', 'Kampanya', '<path d="M4 11h16v9H4zM2 7h20v4H2zM12 7v13M12 7c-2-4-6-4-6-1s6 1 6 1 6 2 6-1-4-3-6 1"/>'),
+  ('customers', 'panel.customers', 'Müşteriler', '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5M16 4.8a3.5 3.5 0 0 1 0 6.4M18 14.8c1.8.8 3 2.6 3.5 5.2"/>'),
+  ('settings', 'panel.settings', 'Ayarlar', '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
+] %}
+<header class="pn-top">
+  <a class="pn-brand" href="{{ url_for('panel.orders') }}">{{ biz.name }}</a>
+  <nav class="pn-side" aria-label="Panel">
+    {% for key, ep, label, icon in items %}
+    <a href="{{ url_for(ep) }}" class="{{ 'is-on' if active == key }}"><svg viewBox="0 0 24 24" aria-hidden="true">{{ icon|safe }}</svg><span>{{ label }}</span>{% if key == 'orders' and nav_pending %}<em class="badge">{{ nav_pending }}</em>{% endif %}</a>
+    {% endfor %}
+    <a href="{{ url_for('panel.qr') }}" class="{{ 'is-on' if active == 'qr' }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 14h2v2h-2zM14 18h2v2h-2zM18 18h2v2h-2z"/></svg><span>QR kod</span></a>
+    <a href="{{ url_for('panel.notifications') }}" class="{{ 'is-on' if active == 'notifications' }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg><span>Bildirimler</span></a>
+  </nav>
+  <div class="pn-top-r">
+    <a class="pn-store" href="{{ ('https://' ~ biz.custom_domain ~ '/') if biz.custom_domain else ('/s/' ~ biz.slug ~ '/') }}" target="_blank" rel="noopener">Mağazayı gör ↗</a>
+    <form method="post" action="{{ url_for('auth.logout') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="pn-out" type="submit">Çıkış</button></form>
+  </div>
+</header>
+<div class="pn-push" id="pn-push" hidden>
+  <span>Yeni siparişlerde bu cihaza bildirim gelsin mi?</span>
+  <a class="btn-sm" href="{{ url_for('panel.notifications') }}">Bildirimleri aç</a>
+  <button type="button" class="pn-push-x" data-dismiss-push aria-label="Kapat">×</button>
+</div>
+<main class="pn-main">
+  {% include "_flash.html" %}
+  {% block content %}{% endblock %}
+</main>
+<nav class="pn-tabs" aria-label="Panel">
+  {% for key, ep, label, icon in items %}
+  <a href="{{ url_for(ep) }}" class="{{ 'is-on' if active == key }}"><svg viewBox="0 0 24 24" aria-hidden="true">{{ icon|safe }}</svg><span>{{ label }}</span>{% if key == 'orders' and nav_pending %}<em class="badge">{{ nav_pending }}</em>{% endif %}</a>
+  {% endfor %}
+</nav>
+{% endblock %}
+{% block scripts %}<script src="/static/js/panel.js?v=1" defer></script>{% block pscripts %}{% endblock %}{% endblock %}

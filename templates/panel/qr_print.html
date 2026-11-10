@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QR afiş · {{ biz.name }}</title>
+<style>
+@page{size:A4;margin:10mm}
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#eee;color:#1d1d1b}
+.bar{position:sticky;top:0;display:flex;gap:12px;align-items:center;justify-content:space-between;padding:10px 16px;background:#fff;border-bottom:1px solid #ddd;font-size:14px}
+.bar button{font:inherit;padding:8px 16px;border:0;border-radius:8px;background:{{ biz.accent }};color:#fff;cursor:pointer}
+.sheet{display:grid;grid-template-columns:1fr 1fr;gap:8mm;padding:8mm;max-width:210mm;margin:0 auto;background:#fff}
+.card{border:1.5px dashed #bbb;border-radius:6mm;padding:7mm 6mm;text-align:center;break-inside:avoid}
+.biz{font-size:20px;font-weight:800;letter-spacing:-.01em;color:{{ biz.accent }}}
+.how{font-size:15px;font-weight:700;margin:4mm 0 1mm}
+.qr{width:55mm;height:55mm;margin:3mm auto}.qr svg{width:100%;height:100%}
+.gift{display:inline-block;margin-top:3mm;padding:2mm 4mm;border-radius:99px;background:{{ biz.accent }}14;color:{{ biz.accent }};font-weight:700;font-size:12.5px}
+.sub{font-size:11.5px;color:#666;margin-top:2mm}
+@media print{body{background:#fff}.bar{display:none}.sheet{padding:0}}
+</style></head>
+<body>
+<div class="bar"><span>{{ copies }} kart · kesip vitrine, pakete ya da tezgâha koy.</span>
+  <span><a href="?n=2">2</a> · <a href="?n=4">4</a> · <a href="?n=6">6</a> <button onclick="window.print()">Yazdır</button></span></div>
+<div class="sheet">
+  {% for i in range(copies) %}
+  <div class="card">
+    <div class="biz">{{ biz.name }}</div>
+    <div class="how">Okut, seç, sipariş ver</div>
+    <div class="qr" data-url="{{ store_url }}"></div>
+    {% if rule %}<div class="gift">🎁 {{ rule }}</div>{% endif %}
+    <div class="sub">{{ store_url|replace('https://', '')|replace('http://', '') }}</div>
+  </div>
+  {% endfor %}
+</div>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<script>
+document.querySelectorAll(".qr").forEach(function (box) {
+  if (!window.qrcode) { box.textContent = "QR yüklenemedi"; return; }
+  var q = qrcode(0, "M"); q.addData(box.getAttribute("data-url")); q.make();
+  box.innerHTML = q.createSvgTag({ cellSize: 6, margin: 1, scalable: true });
+});
+</script>
+</body></html>
