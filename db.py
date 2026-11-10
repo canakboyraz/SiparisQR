@@ -156,11 +156,29 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   user_agent TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS payments (
+  id {pk},
+  business_id INTEGER NOT NULL,
+  order_id INTEGER NOT NULL,
+  amount_cents INTEGER NOT NULL,
+  method TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  created_by INTEGER,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_payments_order ON payments (order_id);
 CREATE INDEX IF NOT EXISTS ix_orders_biz ON orders (business_id, status);
 CREATE INDEX IF NOT EXISTS ix_orders_cust ON orders (customer_id);
 CREATE INDEX IF NOT EXISTS ix_products_biz ON products (business_id);
 CREATE INDEX IF NOT EXISTS ix_rewards_cust ON rewards (customer_id, status);
 """
+
+
+# Sonradan eklenen sütunlar (eski veritabanlarına otomatik eklenir)
+MIGRATIONS = [
+    ("orders", "internal_note", "TEXT NOT NULL DEFAULT ''"),
+    ("orders", "paid_cents", "INTEGER NOT NULL DEFAULT 0"),
+]
 
 
 def _connect():
@@ -280,6 +298,13 @@ def init():
         for stmt in [s.strip() for s in ddl.split(";") if s.strip()]:
             cur.execute(stmt)
         c.commit()
+        for table, col, ddl_col in MIGRATIONS:
+            try:
+                cur.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl_col}")
+                c.commit()
+            except Exception:      # sütun zaten var
+                c.rollback()
+                cur = c.cursor()
         _initialized.add(key)
 
 

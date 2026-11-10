@@ -36,6 +36,12 @@
     var iban = $("os-iban"), paid = $("os-paid");
     if (iban) iban.hidden = d.paid || idx < 0;
     if (paid) paid.hidden = !d.paid;
+    var it = $("os-iban-text");
+    if (it && d.paid_amount && !d.paid) it.innerHTML = "<b></b> ödemen alındı. Kalan <b></b> tutarı aşağıdaki hesaba gönder. Açıklamaya <b></b> yaz.";
+    if (it && d.paid_amount && !d.paid) { var bs = it.querySelectorAll("b"); bs[0].textContent = d.paid_amount; bs[1].textContent = d.remaining; bs[2].textContent = "Sipariş " + d.id; }
+    var cash = $("os-cash");
+    if (cash && d.paid) cash.textContent = "✓ Ödemen alındı";
+    else if (cash && d.paid_amount) cash.textContent = d.paid_amount + " alındı · kalan " + d.remaining;
     card(d.card);
   }
 

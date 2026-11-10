@@ -89,14 +89,71 @@
   </dl>
 </section>
 
-<section class="card">
-  <h2>Ödeme</h2>
-  <div class="pay-row">
-    <span>{{ PAYMENT[o.payment] }} · <b>{{ 'Ödendi' if o.paid else 'Ödeme bekleniyor' }}</b></span>
-    <form method="post" action="{{ url_for('panel.order_paid', order_id=o.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}">
-      <button class="btn-sm {{ 'is-muted' if o.paid }}" type="submit">{{ 'İşareti kaldır' if o.paid else 'Ödeme alındı' }}</button></form>
+<section class="card pay" id="odeme">
+  <div class="pay-head">
+    <h2>Ödeme takibi</h2>
+    <span class="pill pay-{{ pay.state }}">{{ pay.label }}</span>
   </div>
-  {% if o.payment == 'iban' %}<p class="muted">Müşteri açıklamaya "Sipariş {{ o.id }}" yazacak. Hesabına düşünce "Ödeme alındı"ya bas; müşteri ekranında görünür.</p>{% endif %}
+  <div class="pay-bar" role="progressbar" aria-valuenow="{{ pay.pct }}" aria-valuemin="0" aria-valuemax="100" aria-label="Ödenen oran"><i class="pay-{{ pay.state }}" style="width:{{ pay.pct }}%"></i></div>
+  <dl class="pay-sum">
+    <div><dt>Tutar</dt><dd>{{ tl(pay.total) }}</dd></div>
+    <div><dt>Ödenen</dt><dd class="is-ok">{{ tl(pay.paid) }}</dd></div>
+    <div><dt>{{ 'Fazla' if pay.state == 'over' else 'Kalan' }}</dt><dd class="{{ 'is-bad' if pay.state in ('none','partial') else ('is-warn' if pay.state == 'over' else 'is-ok') }}">{{ tl(pay.over if pay.state == 'over' else pay.remaining) }}</dd></div>
+  </dl>
+  <p class="muted pay-chosen">Müşterinin seçtiği: <b>{{ PAYMENT[o.payment] }}</b>{% if o.payment == 'iban' %} · açıklamaya "Sipariş {{ o.id }}" yazacak{% endif %}</p>
+
+  {% if pays %}
+  <ul class="pay-list">
+    {% for p in pays %}
+    <li>
+      <div class="pay-li">
+        <b>{{ tl(from_cents(p.amount_cents)) }}</b>
+        <span>{{ PAY_METHODS.get(p.method, p.method) }} · {{ local_time(p.created_at, '%d.%m %H:%M') }}</span>
+        {% if p.note %}<small>📝 {{ p.note }}</small>{% endif %}
+      </div>
+      <form method="post" action="{{ url_for('panel.payment_delete', payment_id=p.id) }}" onsubmit="return confirm('Bu ödeme kaydı silinsin mi?')">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <button class="btn-icon is-danger" type="submit" aria-label="Ödeme kaydını sil">×</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if pay.state in ('none', 'partial') %}
+  <form method="post" action="{{ url_for('panel.payment_add', order_id=o.id) }}" class="pay-quick">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="full" value="1">
+    <input type="hidden" name="method" value="{{ o.payment }}">
+    <button class="btn-primary btn-big" type="submit">✓ {{ 'Kalan' if pay.state == 'partial' else 'Tamamı' }} {{ tl(pay.remaining) }} alındı</button>
+  </form>
+  {% endif %}
+
+  <details class="pay-add" {% if pay.state == 'partial' %}open{% endif %}>
+    <summary>{{ 'Kısmi ödeme ekle' if pay.state in ('none', 'partial') else 'Ödeme ekle' }}</summary>
+    <form method="post" action="{{ url_for('panel.payment_add', order_id=o.id) }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <label class="fld"><span>Gelen tutar (TL)</span>
+        <input name="amount" inputmode="decimal" autocomplete="off" required placeholder="ör. 500"></label>
+      <fieldset class="seg seg-sm">
+        <legend>Nasıl geldi?</legend>
+        {% for k, v in PAY_METHODS.items() %}
+        <label><input type="radio" name="method" value="{{ k }}" {% if k == o.payment %}checked{% endif %}><span>{{ v }}</span></label>
+        {% endfor %}
+      </fieldset>
+      <label class="fld"><span>Not <small>(isteğe bağlı)</small></span>
+        <input name="note" maxlength="200" placeholder="ör. Kalan 500 TL cuma günü gelecek"></label>
+      <button class="btn-ghost btn-big" type="submit">Ödemeyi kaydet</button>
+    </form>
+  </details>
+</section>
+
+<section class="card" id="not">
+  <h2>Sipariş notum <small class="muted">· sadece sen görürsün</small></h2>
+  <form method="post" action="{{ url_for('panel.order_note', order_id=o.id) }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <label class="fld"><textarea name="internal_note" rows="3" maxlength="1000" aria-label="Sipariş notu" placeholder="ör. Kalanı kargo gelince ödeyecek, Ahmet Bey'in tavsiyesi">{{ o.internal_note }}</textarea></label>
+    <button class="btn-sm" type="submit">Notu kaydet</button>
+  </form>
 </section>
 
 {% if o.status not in ('pending',) %}

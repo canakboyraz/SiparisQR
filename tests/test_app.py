@@ -192,8 +192,8 @@ def test_full_flow_with_reward(app):
     c.post(f"/panel/orders/{o3['id']}/status", data={"csrf": t, "status": "cancelled"})
     assert core.counted_orders(o["customer_id"]) == 2
 
-    # Ödeme işareti
-    c.post(f"/panel/orders/{o2['id']}/paid", data={"csrf": t})
+    # Ödeme: kalanın tamamı tek dokunuşla
+    c.post(f"/panel/orders/{o2['id']}/payments", data={"csrf": t, "full": "1", "method": "iban"})
     assert core.get_order(o2["id"])["paid"] == 1
     assert c.get(r2.get_json()["url"] + ".json").get_json()["paid"] is True
 
@@ -355,3 +355,84 @@ def test_admin_validation(app):
     r = c.post("/admin/new", data={"csrf": t, "name": "Platform", "slug": "pp", "domain": "platform.test", "email": "z@z.com"})
     assert "Kısa ad" in r.get_data(as_text=True) or "Platformun" in r.get_data(as_text=True)
     assert "Ege Zeytin" in c.get("/admin/").get_data(as_text=True)
+
+
+def test_payment_tracking(app):
+    c = app.test_client()
+    biz = make_biz(c)
+    p1, p2, _ = setup_shop(biz)
+    r = order(c, "/s/ege-zeytin", [{"id": p1, "qty": 2}, {"id": p2, "qty": 0 + 1}], payment="iban")   # 700+1800, teslimat yok
+    oid, url = r.get_json()["id"], r.get_json()["url"]
+    login(c, "sahip@ege.com", "sahip12345")
+    t = csrf(c, f"/panel/orders/{oid}")
+    c.post(f"/panel/orders/{oid}/status", data={"csrf": t, "status": "approved"})
+    o = core.get_order(oid)
+    assert core.payment_state(o)["state"] == "none" and o["total"] == "2500.00"
+
+    # Kısmi ödeme + not
+    page = c.post(f"/panel/orders/{oid}/payments", data={"csrf": t, "amount": "1.000", "method": "iban",
+                                                         "note": "Kalanı cuma"}, follow_redirects=True).get_data(as_text=True)
+    assert "Kalan: 1.500 TL" in page and "Kalanı cuma" in page and "1.500 TL eksik" in page
+    st = core.payment_state(core.get_order(oid))
+    assert st["state"] == "partial" and str(st["paid"]) == "1000.00" and st["pct"] == 40
+    j = c.get(url + ".json").get_json()
+    assert j["paid"] is False and j["paid_amount"] == "1.000 TL" and j["remaining"] == "1.500 TL"
+    assert "1.000 TL" in c.get(url).get_data(as_text=True)
+
+    # Ödemeler sayfası: eksik listesinde, toplam alacak doğru
+    pp = c.get("/panel/payments").get_data(as_text=True)
+    assert f"#{oid} ·" in pp and "1.500 TL alındı" in pp
+
+    # Geçersiz tutarlar
+    for bad in ("0", "-5", "abc", ""):
+        r = c.post(f"/panel/orders/{oid}/payments", data={"csrf": t, "amount": bad, "method": "cash"}, follow_redirects=True)
+        assert core.payment_state(core.get_order(oid))["state"] == "partial", bad
+
+    # Fazla ödeme, sonra kaydı silme
+    c.post(f"/panel/orders/{oid}/payments", data={"csrf": t, "amount": "1600", "method": "cash"})
+    st = core.payment_state(core.get_order(oid))
+    assert st["state"] == "over" and str(st["over"]) == "100.00" and core.get_order(oid)["paid"] == 1
+    last = core.payments(oid)[-1]
+    c.post(f"/panel/payments/{last['id']}/delete", data={"csrf": t})
+    assert core.payment_state(core.get_order(oid))["state"] == "partial"
+
+    # Kalanı tek dokunuşla
+    c.post(f"/panel/orders/{oid}/payments", data={"csrf": t, "full": "1", "method": "iban"})
+    o = core.get_order(oid)
+    assert core.payment_state(o)["state"] == "paid" and o["paid"] == 1 and len(core.payments(oid)) == 2
+    assert c.get(url + ".json").get_json()["paid"] is True
+    assert f"#{oid} ·" not in c.get("/panel/payments").get_data(as_text=True)
+    assert f"#{oid} ·" in c.get("/panel/payments?tab=paid").get_data(as_text=True)
+
+    # İç not
+    c.post(f"/panel/orders/{oid}/note", data={"csrf": t, "internal_note": "Ahmet Bey'in tavsiyesi"})
+    assert core.get_order(oid)["internal_note"] == "Ahmet Bey'in tavsiyesi"
+    assert "Ahmet Bey" not in c.get(url).get_data(as_text=True)     # müşteri görmez
+
+    # Başka işletme bu ödemeyi silemez / ekleyemez
+    c.post("/logout", data={"csrf": t})
+    make_biz(c, "Bal Evi", "bal-evi", "", "b@b.com")
+    login(c, "b@b.com", "sahip12345")
+    t2 = csrf(c, "/panel/orders")
+    assert c.post(f"/panel/orders/{oid}/payments", data={"csrf": t2, "amount": "5", "method": "cash"}).status_code == 404
+    c.post(f"/panel/payments/{core.payments(oid)[0]['id']}/delete", data={"csrf": t2})
+    assert len(core.payments(oid)) == 2
+
+
+def test_migration_adds_columns(tmp_path, monkeypatch):
+    """Yeni sütunlar olmadan oluşturulmuş eski veritabanına sütunlar eklenir; ikinci açılış da sorunsuz."""
+    import sqlite3
+    path = tmp_path / "old.db"
+    old_schema = db.SCHEMA.format(pk="INTEGER PRIMARY KEY AUTOINCREMENT", blob="BLOB")
+    con = sqlite3.connect(path); con.executescript(old_schema); con.commit()
+    assert "paid_cents" not in {r[1] for r in con.execute("PRAGMA table_info(orders)")}
+    con.close()
+    db.close()
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{path}")
+    db._initialized.discard(f"sqlite:///{path}")
+    db.init()
+    db._initialized.discard(f"sqlite:///{path}")
+    db.init()
+    cols = {r["name"] for r in db.query("PRAGMA table_info(orders)")}
+    assert {"internal_note", "paid_cents"} <= cols
+    db.close()

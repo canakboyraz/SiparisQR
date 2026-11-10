@@ -30,7 +30,13 @@ def nav():
     biz = getattr(g, "biz", None)
     if not biz:
         return {}
-    return {"nav_pending": _counts(biz["id"])["pending"], "biz": biz}
+    unpaid = 0
+    for o in db.query("SELECT total, paid_cents FROM orders WHERE business_id = ? AND status IN "
+                      "('approved','on_the_way','delivered')", (biz["id"],)):
+        if int(o["paid_cents"] or 0) < core.cents(o["total"]):
+            unpaid += 1
+    return {"nav_pending": _counts(biz["id"])["pending"], "nav_unpaid": unpaid, "biz": biz, "pay_state": core.payment_state,
+            "PAY_METHODS": core.PAY_METHODS, "from_cents": core.from_cents}
 
 
 @bp.get("/")
@@ -86,7 +92,8 @@ def order(order_id):
     earned_here = db.query("SELECT * FROM rewards WHERE earned_order_id = ?", (o["id"],))
     return render_template("panel/order.html", active="orders", o=o, lines=core.order_lines(o["id"]),
                            customer=customer, previous=int(history["n"]), card=card,
-                           given_here=given_here, earned_here=earned_here)
+                           given_here=given_here, earned_here=earned_here,
+                           pay=core.payment_state(o), pays=core.payments(o["id"]))
 
 
 @bp.post("/orders/<int:order_id>/status")
@@ -111,14 +118,85 @@ def order_status(order_id):
     return redirect(url_for("panel.orders", tab="pending" if o["status"] == "pending" else "active"))
 
 
-@bp.post("/orders/<int:order_id>/paid")
+@bp.post("/orders/<int:order_id>/payments")
 @login_required
-def order_paid(order_id):
+def payment_add(order_id):
     o = _order_or_404(order_id)
-    db.update("orders", o["id"], {"paid": 0 if o["paid"] else 1, "updated_at": core.now()})
+    f = request.form
+    amount = f.get("amount")
+    if f.get("full"):
+        rem = core.payment_state(o)["remaining"]
+        if rem <= 0:
+            flash("Bu siparişin ödemesi zaten tamam.", "ok")
+            return redirect(url_for("panel.order", order_id=order_id) + "#odeme")
+        amount = str(rem)
+    try:
+        o = core.add_payment(g.biz["id"], o, amount, f.get("method") or o["payment"], f.get("note", ""),
+                             current_user()["id"])
+    except core.OrderError as e:
+        flash(str(e), "error")
+        return redirect(url_for("panel.order", order_id=order_id) + "#odeme")
+    st = core.payment_state(o)
+    msg = {"paid": "Ödeme kaydedildi. Bu siparişin ödemesi tamam ✓",
+           "partial": f"Ödeme kaydedildi. Kalan: {core.tl(st['remaining'])}",
+           "over": f"Ödeme kaydedildi. Dikkat: {core.tl(st['over'])} fazla ödenmiş."}.get(st["state"], "Kaydedildi.")
+    flash(msg, "ok" if st["state"] != "over" else "gift")
+    back = f.get("back")
+    if back and back.startswith("/panel"):
+        return redirect(back)
+    return redirect(url_for("panel.order", order_id=order_id) + "#odeme")
+
+
+@bp.post("/payments/<int:payment_id>/delete")
+@login_required
+def payment_delete(payment_id):
+    try:
+        p = core.delete_payment(g.biz["id"], payment_id)
+        flash(f"{core.tl(core.from_cents(p['amount_cents']))} ödeme kaydı silindi.", "ok")
+        return redirect(url_for("panel.order", order_id=p["order_id"]) + "#odeme")
+    except core.OrderError as e:
+        flash(str(e), "error")
+        return redirect(url_for("panel.payments_page"))
+
+
+@bp.post("/orders/<int:order_id>/note")
+@login_required
+def order_note(order_id):
+    o = _order_or_404(order_id)
+    db.update("orders", o["id"], {"internal_note": (request.form.get("internal_note") or "").strip()[:1000]})
     db.commit()
-    flash("Ödeme alındı olarak işaretlendi." if not o["paid"] else "Ödeme işareti kaldırıldı.", "ok")
-    return redirect(url_for("panel.order", order_id=order_id))
+    flash("Not kaydedildi.", "ok")
+    return redirect(url_for("panel.order", order_id=order_id) + "#not")
+
+
+PAY_TABS = {"open": "Eksik", "paid": "Tamam", "all": "Tümü"}
+
+
+@bp.get("/payments")
+@login_required
+def payments_page():
+    tab = request.args.get("tab", "open")
+    if tab not in PAY_TABS:
+        tab = "open"
+    marks = ",".join("?" for _ in core.CLOSED)
+    rows = db.query(f"SELECT * FROM orders WHERE business_id = ? AND status NOT IN ({marks}) "
+                    f"ORDER BY id DESC LIMIT 500", (g.biz["id"], *core.CLOSED))
+    items, owed, collected, open_n = [], 0, 0, 0
+    for o in rows:
+        st = core.payment_state(o)
+        collected += int(o["paid_cents"] or 0)
+        if st["state"] in ("none", "partial"):
+            owed += core.cents(st["remaining"])
+            open_n += 1
+        if tab == "open" and st["state"] not in ("none", "partial"):
+            continue
+        if tab == "paid" and st["state"] not in ("paid", "over"):
+            continue
+        items.append((o, st))
+    if tab == "open":
+        items.sort(key=lambda x: x[0]["id"])          # en eski alacak üstte
+    return render_template("panel/payments.html", active="payments", tab=tab, tabs=PAY_TABS, items=items,
+                           owed=core.from_cents(owed), collected=core.from_cents(collected), open_n=open_n)
 
 
 @bp.post("/orders/<int:order_id>/message")

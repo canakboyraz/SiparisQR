@@ -1,0 +1,38 @@
+{% extends "panel/layout.html" %}
+{% block ptitle %}Ödemeler{% endblock %}
+{% block content %}
+<div class="pn-head"><h1>Ödemeler</h1></div>
+<section class="card stats">
+  <div><b class="is-bad">{{ tl(owed) }}</b><span>bekleyen alacak</span></div>
+  <div><b>{{ open_n }}</b><span>eksik sipariş</span></div>
+  <div><b class="is-ok">{{ tl(collected) }}</b><span>tahsil edilen</span></div>
+</section>
+<nav class="pn-seg" aria-label="Ödeme durumu">
+  {% for key, label in tabs.items() %}<a href="{{ url_for('panel.payments_page', tab=key) }}" class="{{ 'is-on' if tab == key }}">{{ label }}{% if key == 'open' and open_n %} <em>{{ open_n }}</em>{% endif %}</a>{% endfor %}
+</nav>
+{% if not items %}
+<div class="pn-empty"><p>{{ 'Eksik ödemesi olan sipariş yok 👍' if tab == 'open' else 'Kayıt yok.' }}</p></div>
+{% endif %}
+<ul class="ol">
+  {% for o, st in items %}
+  <li class="pay-row-card">
+    <a class="ol-row" href="{{ url_for('panel.order', order_id=o.id) }}#odeme">
+      <div class="ol-main">
+        <b>#{{ o.id }} · {{ o.customer_name }}</b>
+        <span>{{ tl(st.paid) }} / {{ tl(st.total) }} · {{ PAYMENT[o.payment] }}</span>
+        <small>{{ local_time(o.created_at, '%d.%m.%Y') }} · {{ STATUS[o.status] }}</small>
+        {% if o.internal_note %}<small class="note-line">📝 {{ o.internal_note|truncate(70) }}</small>{% endif %}
+      </div>
+      <div class="ol-side"><span class="pill pay-{{ st.state }}">{{ st.label }}</span></div>
+    </a>
+    {% if st.state in ('none', 'partial') %}
+    <form method="post" action="{{ url_for('panel.payment_add', order_id=o.id) }}" class="pay-inline">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="full" value="1">
+      <input type="hidden" name="method" value="{{ o.payment }}"><input type="hidden" name="back" value="{{ request.full_path }}">
+      <button class="btn-sm" type="submit" onclick="return confirm('#{{ o.id }} için {{ tl(st.remaining) }} alındı olarak kaydedilsin mi?')">{{ tl(st.remaining) }} alındı</button>
+    </form>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% endblock %}

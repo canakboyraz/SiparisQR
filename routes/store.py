@@ -94,6 +94,8 @@ def _status_data(biz, order):
     return {
         "id": order["id"], "status": order["status"], "label": core.STATUS[order["status"]],
         "message": order["owner_message"], "reason": order["reject_reason"], "paid": bool(order["paid"]),
+        "paid_amount": core.tl(core.payment_state(order)["paid"]) if order["paid_cents"] else "",
+        "remaining": core.tl(core.payment_state(order)["remaining"]),
         "card": None if not card else {
             "every": card["every"], "filled": card["filled"], "left": card["left"], "active": card["active"],
             "text": card["text"], "rewards": [r["text"] for r in card["rewards"]],

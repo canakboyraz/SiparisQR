@@ -24,12 +24,13 @@
     <a class="ol-row is-{{ o.status }}" href="{{ url_for('panel.order', order_id=o.id) }}">
       <div class="ol-main">
         <b>#{{ o.id }} · {{ o.customer_name }}</b>
-        <span>{{ FULFILMENT[o.fulfilment] }} · {{ PAYMENT[o.payment] }}{% if o.payment == 'iban' %} · {{ 'ödendi' if o.paid else 'ödeme bekleniyor' }}{% endif %}</span>
+        <span>{{ FULFILMENT[o.fulfilment] }} · {{ PAYMENT[o.payment] }}</span>
         <small>{{ local_time(o.created_at) }}{% if o.customer_id in has_reward %} · <span class="tag-gift">🎁 ödülü var</span>{% endif %}</small>
       </div>
       <div class="ol-side">
         <b>{{ tl(o.total) }}</b>
         <span class="pill is-{{ o.status }}">{{ STATUS[o.status] }}</span>
+        {% if o.status not in ('rejected', 'cancelled') %}{% set ps = pay_state(o) %}<span class="pill pay-{{ ps.state }}">{{ ps.label }}</span>{% endif %}
       </div>
     </a>
   </li>

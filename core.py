@@ -40,6 +40,11 @@ PAYMENT = {"cash": "Nakit (teslimde)", "iban": "IBAN / havale"}
 FULFILMENT = {"delivery": "Adrese teslim", "pickup": "Gel al"}
 
 
+PAY_METHODS = {"cash": "Nakit", "iban": "Havale / EFT", "card": "Kart", "other": "Diğer"}
+PAY_STATE = {"none": "Ödenmedi", "partial": "Eksik", "paid": "Ödendi", "over": "Fazla ödendi"}
+CLOSED = ("rejected", "cancelled")
+
+
 class OrderError(Exception):
     pass
 
@@ -366,3 +371,84 @@ def give_reward(biz_id, reward_id, order_id=None):
 
 def pending_rewards(customer_id):
     return db.query("SELECT * FROM rewards WHERE customer_id = ? AND status = 'earned' ORDER BY id", (customer_id,))
+
+
+# ── Ödeme takibi ────────────────────────────────────────────────────────────
+
+def cents(value) -> int:
+    return int((money(value) * 100).to_integral_value())
+
+
+def from_cents(c) -> Decimal:
+    return (Decimal(int(c or 0)) / 100).quantize(Decimal("0.01"))
+
+
+def payment_state(order):
+    """Sipariş satırından ödeme özeti: {total, paid, remaining, state, label, pct}."""
+    total = cents(order["total"])
+    paid = int(order.get("paid_cents") or 0)
+    if paid <= 0:
+        state = "none"
+    elif paid < total:
+        state = "partial"
+    elif paid == total:
+        state = "paid"
+    else:
+        state = "over"
+    remaining = total - paid
+    label = PAY_STATE[state]
+    if state == "partial":
+        label = f"{tl(from_cents(remaining))} eksik"
+    elif state == "over":
+        label = f"{tl(from_cents(-remaining))} fazla"
+    return {"total": from_cents(total), "paid": from_cents(paid), "remaining": from_cents(max(remaining, 0)),
+            "over": from_cents(max(-remaining, 0)), "state": state, "label": label,
+            "pct": 100 if total <= 0 else min(100, round(paid * 100 / total))}
+
+
+def payments(order_id):
+    return db.query("SELECT * FROM payments WHERE order_id = ? ORDER BY id", (order_id,))
+
+
+def _recompute_paid(order_id):
+    r = db.one("SELECT COALESCE(SUM(amount_cents), 0) AS s FROM payments WHERE order_id = ?", (order_id,))
+    paid = int(r["s"])
+    o = get_order(order_id)
+    db.update("orders", order_id, {"paid_cents": paid, "paid": 1 if paid >= cents(o["total"]) and paid > 0 else 0,
+                                   "updated_at": now()})
+
+
+def add_payment(biz_id, order, amount, method, note="", user_id=None):
+    try:
+        c = cents(amount)
+    except ValueError:
+        raise OrderError("Tutarı rakamla yaz (ör. 500 ya da 499,90).") from None
+    if c <= 0:
+        raise OrderError("Tutar 0'dan büyük olmalı.")
+    if c > cents(order["total"]) * 10 + 1_000_000:
+        raise OrderError("Tutar çok yüksek görünüyor, kontrol et.")
+    if method not in PAY_METHODS:
+        raise OrderError("Ödeme yöntemini seç.")
+    try:
+        db.insert("payments", {"business_id": biz_id, "order_id": order["id"], "amount_cents": c, "method": method,
+                               "note": (note or "").strip()[:200], "created_by": user_id, "created_at": now()})
+        _recompute_paid(order["id"])
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return get_order(order["id"])
+
+
+def delete_payment(biz_id, payment_id):
+    p = db.one("SELECT * FROM payments WHERE id = ? AND business_id = ?", (payment_id, biz_id))
+    if not p:
+        raise OrderError("Ödeme kaydı bulunamadı.")
+    try:
+        db.execute("DELETE FROM payments WHERE id = ?", (payment_id,))
+        _recompute_paid(p["order_id"])
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return p
