@@ -1,15 +1,45 @@
 {% extends "panel/layout.html" %}
 {% block ptitle %}{{ 'Ürünü düzenle' if p and p.id else 'Yeni ürün' }}{% endblock %}
+{% block pscripts %}<script>
+(function () {
+  var list = document.getElementById("vr-list"), single = document.getElementById("pf-single");
+  function sync() { single.hidden = list.children.length > 0; }
+  document.getElementById("vr-add").addEventListener("click", function () {
+    var row = document.getElementById("vr-tpl").content.firstElementChild.cloneNode(true);
+    list.appendChild(row); row.querySelector('[name="v_name"]').focus(); sync();
+  });
+  list.addEventListener("click", function (e) { var b = e.target.closest("[data-vr-del]"); if (b) { b.parentNode.remove(); sync(); } });
+})();
+</script>{% endblock %}
 {% block content %}
 <a class="pn-back" href="{{ url_for('panel.products') }}">← Ürünler</a>
 <h1>{{ 'Ürünü düzenle' if p and p.id else 'Yeni ürün' }}</h1>
 <form method="post" enctype="multipart/form-data" class="card form">
   <input type="hidden" name="csrf" value="{{ csrf_token() }}">
   <label class="fld"><span>Ürün adı</span><input name="name" value="{{ p.name if p else '' }}" maxlength="100" required placeholder="ör. Gemlik Siyah Zeytin"></label>
-  <div class="row2">
-    <label class="fld"><span>Fiyat (TL)</span><input name="price" inputmode="decimal" value="{{ (p.price|replace('.', ',')|replace(',00', '')) if p and p.price else '' }}" required placeholder="350"></label>
-    <label class="fld"><span>Birim / miktar</span><input name="unit" value="{{ p.unit if p else '' }}" maxlength="40" placeholder="ör. 1 kg, 5 lt teneke"></label>
+  <div class="row3" id="pf-single" {% if variants %}hidden{% endif %}>
+    <label class="fld"><span>Fiyat (TL)</span><input name="price" inputmode="decimal" value="{{ (p.price|replace('.', ',')|replace(',00', '')) if p and p.price else '' }}" placeholder="350"></label>
+    <label class="fld"><span>Birim / miktar</span><input name="unit" value="{{ p.unit if p else '' }}" maxlength="40" placeholder="ör. 1 kg"></label>
+    <label class="fld"><span>Stok adedi</span><input name="stock" inputmode="numeric" value="{{ p.stock if p and p.stock is not none else '' }}" placeholder="boş = sınırsız"></label>
   </div>
+
+  <div class="fld vr">
+    <span>Seçenekler <small>(ör. 500 g / 1 kg / 5 kg — isteğe bağlı)</small></span>
+    <div id="vr-list">
+      {% for v in variants %}
+      <div class="vr-row">
+        <input type="hidden" name="v_id" value="{{ v.id }}">
+        <input name="v_name" value="{{ v.name }}" maxlength="40" placeholder="Seçenek" aria-label="Seçenek adı">
+        <input name="v_price" inputmode="decimal" value="{{ v.price|replace('.', ',')|replace(',00', '') }}" placeholder="Fiyat" aria-label="Fiyat">
+        <input name="v_stock" inputmode="numeric" value="{{ v.stock if v.stock is not none else '' }}" placeholder="Stok" aria-label="Stok (boş = sınırsız)">
+        <button type="button" class="btn-icon is-danger" data-vr-del aria-label="Seçeneği sil">×</button>
+      </div>
+      {% endfor %}
+    </div>
+    <button type="button" class="btn-sm" id="vr-add">+ Seçenek ekle</button>
+    <small>Seçenek eklersen müşteri birini seçer; fiyat ve stok seçeneğe göre olur. Stok boşsa sınırsız.</small>
+  </div>
+  <template id="vr-tpl"><div class="vr-row"><input type="hidden" name="v_id" value=""><input name="v_name" maxlength="40" placeholder="Seçenek" aria-label="Seçenek adı"><input name="v_price" inputmode="decimal" placeholder="Fiyat" aria-label="Fiyat"><input name="v_stock" inputmode="numeric" placeholder="Stok" aria-label="Stok (boş = sınırsız)"><button type="button" class="btn-icon is-danger" data-vr-del aria-label="Seçeneği sil">×</button></div></template>
   <label class="fld"><span>Açıklama <small>(isteğe bağlı)</small></span><textarea name="description" rows="3" maxlength="500" placeholder="ör. Bu yılın hasadı, az tuzlu, salamura">{{ p.description if p else '' }}</textarea></label>
   <div class="row2">
     <label class="fld"><span>Kategori</span>

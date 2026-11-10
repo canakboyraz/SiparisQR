@@ -8,7 +8,7 @@ from PIL import Image, ImageOps
 import core
 import db
 import webpush
-from app import current_user, login_required, platform_name, public_store_url, push_subject
+from app import current_user, login_required, platform_name, public_order_url, public_store_url, push_subject
 
 bp = Blueprint("panel", __name__, url_prefix="/panel")
 
@@ -90,10 +90,15 @@ def order(order_id):
     card = core.loyalty_card(g.biz, o["customer_id"])
     given_here = db.query("SELECT * FROM rewards WHERE given_order_id = ?", (o["id"],))
     earned_here = db.query("SELECT * FROM rewards WHERE earned_order_id = ?", (o["id"],))
+    pay = core.payment_state(o)
+    url = public_order_url(g.biz, o)
+    msgs = [(label, core.wa_link(o["customer_phone"], text)) for label, text in
+            core.customer_messages(g.biz, o, url, pay, earned_here)]
     return render_template("panel/order.html", active="orders", o=o, lines=core.order_lines(o["id"]),
                            customer=customer, previous=int(history["n"]), card=card,
-                           given_here=given_here, earned_here=earned_here,
-                           pay=core.payment_state(o), pays=core.payments(o["id"]))
+                           given_here=given_here, earned_here=earned_here, order_url=url,
+                           pay=pay, pays=core.payments(o["id"]), msgs=msgs, KIND_LABEL=core.KIND_LABEL,
+                           CARGO=CARGO_COMPANIES)
 
 
 @bp.post("/orders/<int:order_id>/status")
@@ -110,12 +115,10 @@ def order_status(order_id):
     msg = {"approved": "Sipariş onaylandı. Müşteri ekranında görüyor.",
            "rejected": "Sipariş reddedildi.", "on_the_way": "Sipariş 'Yolda / hazır' olarak işaretlendi.",
            "delivered": "Sipariş teslim edildi.", "cancelled": "Sipariş iptal edildi."}.get(new, "Güncellendi.")
-    flash(msg, "ok")
-    if earned:
-        flash(f"🎁 Bu siparişle müşteri ödül kazandı: {earned['text']}. Siparişe ekleyip 'Verildi' işaretleyebilirsin.", "gift")
-    if new in ("approved",):
-        return redirect(url_for("panel.order", order_id=order_id))
-    return redirect(url_for("panel.orders", tab="pending" if o["status"] == "pending" else "active"))
+    flash(msg + " Aşağıdan müşteriye WhatsApp'tan haber verebilirsin.", "ok")
+    for r in earned:
+        flash(f"🎁 Bu siparişle müşteri ödül kazandı: {r['text']}. Siparişe ekleyip 'Verildi' işaretleyebilirsin.", "gift")
+    return redirect(url_for("panel.order", order_id=order_id) + "#haber")
 
 
 @bp.post("/orders/<int:order_id>/payments")
@@ -210,6 +213,34 @@ def order_message(order_id):
     return redirect(url_for("panel.order", order_id=order_id))
 
 
+CARGO_COMPANIES = ["Yurtiçi Kargo", "Aras Kargo", "MNG Kargo", "PTT Kargo", "Sürat Kargo", "HepsiJet",
+                   "Trendyol Express", "Kolay Gelsin", "UPS", "Kendi kuryemiz", "Diğer"]
+
+
+@bp.post("/orders/<int:order_id>/cargo")
+@login_required
+def order_cargo(order_id):
+    o = _order_or_404(order_id)
+    f = request.form
+    url = (f.get("cargo_url") or "").strip()[:400]
+    if url and not url.startswith(("https://", "http://")):
+        flash("Takip linki https:// ile başlamalı.", "error")
+        return redirect(url_for("panel.order", order_id=order_id) + "#kargo")
+    db.update("orders", o["id"], {"cargo_company": (f.get("cargo_company") or "").strip()[:60],
+                                  "cargo_tracking": (f.get("cargo_tracking") or "").strip()[:80],
+                                  "cargo_url": url, "updated_at": core.now()})
+    db.commit()
+    if f.get("and_ship") and o["status"] == "approved":
+        try:
+            core.set_status(g.biz, core.get_order(o["id"]), "on_the_way")
+            flash("Kargo bilgisi kaydedildi, sipariş 'Yolda' oldu. Müşteriye WhatsApp'tan haber ver.", "ok")
+            return redirect(url_for("panel.order", order_id=order_id) + "#haber")
+        except core.OrderError as e:
+            flash(str(e), "error")
+    flash("Kargo bilgisi kaydedildi. Müşteri sipariş ekranında görüyor.", "ok")
+    return redirect(url_for("panel.order", order_id=order_id) + "#kargo")
+
+
 @bp.post("/rewards/<int:reward_id>/give")
 @login_required
 def give_reward(reward_id):
@@ -258,7 +289,9 @@ def save_image(file_storage, biz_id, size=1100):
 def products():
     groups = core.catalog(g.biz["id"], only_visible=False)
     cats = db.query("SELECT * FROM categories WHERE business_id = ? ORDER BY position, id", (g.biz["id"],))
-    return render_template("panel/products.html", active="products", groups=groups, cats=cats)
+    vmap = core.variants_by_product([p["id"] for _, items in groups for p in items])
+    return render_template("panel/products.html", active="products", groups=groups, cats=cats, vmap=vmap,
+                           product_available=core.product_available)
 
 
 def _category_id(form):
@@ -275,54 +308,117 @@ def _category_id(form):
     return None
 
 
+def _stock(raw):
+    raw = (raw or "").strip()
+    if raw == "":
+        return None
+    try:
+        n = int(raw)
+    except ValueError:
+        raise ValueError("Stok adedini tam sayı olarak yaz (boş = sınırsız).") from None
+    if n < 0 or n > 1_000_000:
+        raise ValueError("Stok adedi 0 ile 1.000.000 arasında olmalı.")
+    return n
+
+
+def _variants_from_form(f):
+    names, prices, stocks, ids = (f.getlist(k) for k in ("v_name", "v_price", "v_stock", "v_id"))
+    out = []
+    for i, name in enumerate(names):
+        name = (name or "").strip()[:40]
+        price_raw = prices[i] if i < len(prices) else ""
+        if not name and not (price_raw or "").strip():
+            continue
+        if not name:
+            raise ValueError("Her seçeneğe bir ad yaz (ör. 1 kg).")
+        try:
+            price = core.money(price_raw)
+        except ValueError:
+            raise ValueError(f"'{name}' seçeneğinin fiyatını doğru yaz.") from None
+        if price <= 0:
+            raise ValueError(f"'{name}' seçeneğinin fiyatı 0'dan büyük olmalı.")
+        vid = ids[i] if i < len(ids) else ""
+        out.append({"id": int(vid) if vid.isdigit() else None, "name": name, "price": str(price),
+                    "stock": _stock(stocks[i] if i < len(stocks) else "")})
+    if len(out) > 20:
+        raise ValueError("En fazla 20 seçenek eklenebilir.")
+    return out
+
+
+def _save_variants(product_id, variants):
+    existing = {v["id"] for v in db.query("SELECT id FROM product_variants WHERE product_id = ?", (product_id,))}
+    keep = set()
+    for pos, v in enumerate(variants):
+        if v["id"] in existing:
+            db.update("product_variants", v["id"], {"name": v["name"], "price": v["price"], "stock": v["stock"],
+                                                    "position": pos})
+            keep.add(v["id"])
+        else:
+            db.insert("product_variants", {"business_id": g.biz["id"], "product_id": product_id, "name": v["name"],
+                                           "price": v["price"], "stock": v["stock"], "position": pos})
+    for vid in existing - keep:
+        db.execute("DELETE FROM product_variants WHERE id = ?", (vid,))
+
+
 @bp.route("/products/new", methods=["GET", "POST"])
 @bp.route("/products/<int:product_id>", methods=["GET", "POST"])
 @login_required
 def product_form(product_id=None):
     p = None
+    variants = []
     if product_id:
         p = db.one("SELECT * FROM products WHERE id = ? AND business_id = ?", (product_id, g.biz["id"]))
         if not p:
             abort(404)
+        variants = core.variants_by_product([p["id"]]).get(p["id"], [])
     cats = db.query("SELECT * FROM categories WHERE business_id = ? ORDER BY position, id", (g.biz["id"],))
     if request.method == "POST":
         f = request.form
         name = (f.get("name") or "").strip()[:100]
         try:
-            price = core.money(f.get("price"))
-        except ValueError:
-            price = None
-        if not name:
-            flash("Ürün adını yaz.", "error")
-        elif price is None or price <= 0:
-            flash("Fiyatı doğru yaz (ör. 350 ya da 349,90).", "error")
-        else:
-            try:
-                values = {"name": name, "description": (f.get("description") or "").strip()[:500],
-                          "unit": (f.get("unit") or "").strip()[:40], "price": str(price),
-                          "category_id": _category_id(f), "available": 1 if f.get("available") else 0,
-                          "visible": 1 if f.get("visible") else 0}
-                photo = request.files.get("photo")
-                if photo and photo.filename:
-                    values["image_id"] = save_image(photo, g.biz["id"])
-                elif f.get("remove_photo"):
-                    values["image_id"] = None
-                if p:
-                    db.update("products", p["id"], values)
-                else:
-                    pos = db.one("SELECT COALESCE(MAX(position), 0) AS m FROM products WHERE business_id = ?", (g.biz["id"],))
-                    db.insert("products", {"business_id": g.biz["id"], "position": int(pos["m"]) + 1,
-                                           "created_at": core.now(), **values})
-                db.commit()
-                flash("Ürün kaydedildi.", "ok")
-                return redirect(url_for("panel.products"))
-            except ValueError as e:
-                db.rollback()
-                flash(str(e), "error")
-        p = {**(p or {}), **{k: f.get(k, "") for k in ("name", "description", "unit", "price")},
+            new_variants = _variants_from_form(f)
+            if new_variants:
+                price = min(core.money(v["price"]) for v in new_variants)
+            else:
+                try:
+                    price = core.money(f.get("price"))
+                except ValueError:
+                    raise ValueError("Fiyatı doğru yaz (ör. 350 ya da 349,90).") from None
+                if price <= 0:
+                    raise ValueError("Fiyatı doğru yaz (ör. 350 ya da 349,90).")
+            if not name:
+                raise ValueError("Ürün adını yaz.")
+            values = {"name": name, "description": (f.get("description") or "").strip()[:500],
+                      "unit": (f.get("unit") or "").strip()[:40], "price": str(price),
+                      "stock": None if new_variants else _stock(f.get("stock")),
+                      "category_id": _category_id(f), "available": 1 if f.get("available") else 0,
+                      "visible": 1 if f.get("visible") else 0}
+            photo = request.files.get("photo")
+            if photo and photo.filename:
+                values["image_id"] = save_image(photo, g.biz["id"])
+            elif f.get("remove_photo"):
+                values["image_id"] = None
+            if p:
+                db.update("products", p["id"], values)
+                pid = p["id"]
+            else:
+                pos = db.one("SELECT COALESCE(MAX(position), 0) AS m FROM products WHERE business_id = ?", (g.biz["id"],))
+                pid = db.insert("products", {"business_id": g.biz["id"], "position": int(pos["m"]) + 1,
+                                             "created_at": core.now(), **values})
+            _save_variants(pid, new_variants)
+            db.commit()
+            flash("Ürün kaydedildi.", "ok")
+            return redirect(url_for("panel.products") + f"#p{pid}")
+        except ValueError as e:
+            db.rollback()
+            flash(str(e), "error")
+        p = {**(p or {}), **{k: f.get(k, "") for k in ("name", "description", "unit", "price", "stock")},
              "available": bool(f.get("available")), "visible": bool(f.get("visible")),
              "category_id": f.get("category_id", type=int), "image_id": (p or {}).get("image_id"), "id": product_id}
-    return render_template("panel/product_form.html", active="products", p=p, cats=cats)
+        variants = [{"id": (int(i) if i.isdigit() else ""), "name": n, "price": pr, "stock": st}
+                    for i, n, pr, st in zip(f.getlist("v_id"), f.getlist("v_name"), f.getlist("v_price"), f.getlist("v_stock"))
+                    if n or pr]
+    return render_template("panel/product_form.html", active="products", p=p, cats=cats, variants=variants)
 
 
 @bp.post("/products/<int:product_id>/toggle")
@@ -543,6 +639,8 @@ def notifications():
 @bp.post("/push/subscribe")
 @login_required
 def push_subscribe():
+    if getattr(g, "impersonating", False):
+        return jsonify(ok=False, error="Yönetici olarak paneldeyken bildirim açılamaz; işletme sahibi kendi telefonunda açmalı."), 400
     data = request.get_json(silent=True) or {}
     endpoint = str(data.get("endpoint") or "")
     keys = data.get("keys") or {}

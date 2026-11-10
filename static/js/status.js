@@ -43,6 +43,16 @@
     if (cash && d.paid) cash.textContent = "✓ Ödemen alındı";
     else if (cash && d.paid_amount) cash.textContent = d.paid_amount + " alındı · kalan " + d.remaining;
     card(d.card);
+    var cg = $("os-cargo");
+    if (cg) {
+      cg.hidden = !d.cargo;
+      if (d.cargo) {
+        $("os-cargo-co").textContent = d.cargo.company || "Kargo";
+        $("os-cargo-no").textContent = d.cargo.no || "";
+        $("os-cargo-copy").hidden = !d.cargo.no; $("os-cargo-copy").setAttribute("data-copy", d.cargo.no || "");
+        $("os-cargo-url").hidden = !d.cargo.url; if (d.cargo.url) $("os-cargo-url").href = d.cargo.url;
+      }
+    }
   }
 
   function card(c) {
@@ -75,6 +85,19 @@
     var done = function () { var o = b.textContent; b.textContent = "Kopyalandı ✓"; setTimeout(function () { b.textContent = o; }, 1800); };
     if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, function () {});
     else { var ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); done(); }
+  });
+
+  var ro = $("os-reorder");
+  if (ro) ro.addEventListener("click", function () {
+    try {
+      var c = {};
+      JSON.parse(ro.getAttribute("data-items")).forEach(function (it) {
+        var k = it.variant ? it.id + ":" + it.variant : String(it.id);
+        c[k] = (c[k] || 0) + it.qty;
+      });
+      localStorage.setItem(ro.getAttribute("data-cart"), JSON.stringify(c));
+    } catch (e) {}
+    location.href = ro.getAttribute("data-store");
   });
 
   paint(window.ORDER);

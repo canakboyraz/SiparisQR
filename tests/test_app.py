@@ -436,3 +436,124 @@ def test_migration_adds_columns(tmp_path, monkeypatch):
     cols = {r["name"] for r in db.query("PRAGMA table_info(orders)")}
     assert {"internal_note", "paid_cents"} <= cols
     db.close()
+
+
+# ── 1. aşama ────────────────────────────────────────────────────────────────
+
+def _owner(app, **shop):
+    c = app.test_client()
+    biz = make_biz(c)
+    ps = setup_shop(biz, **shop)
+    login(c, "sahip@ege.com", "sahip12345")
+    return c, biz, ps, csrf(c, "/panel/orders")
+
+
+def test_variants_and_stock(app):
+    c, biz, (p1, p2, _), t = _owner(app)
+    # Ürünü seçenekli yap: 500 g (stok 2), 1 kg (sınırsız)
+    r = c.post(f"/panel/products/{p1}", data={"csrf": t, "name": "Siyah Zeytin", "available": "1", "visible": "1",
+               "v_id": ["", ""], "v_name": ["500 g", "1 kg"], "v_price": ["200", "350"], "v_stock": ["2", ""]},
+               follow_redirects=True)
+    assert "Ürün kaydedildi" in r.get_data(as_text=True)
+    vs = core.variants_by_product([p1])[p1]
+    small, big = vs[0], vs[1]
+    assert small["stock"] == 2 and big["stock"] is None
+    assert db.one("SELECT price FROM products WHERE id = ?", (p1,))["price"] == "200.00"     # en düşük fiyat
+    page = c.get("/s/ege-zeytin/").get_data(as_text=True)
+    assert "500 g · 1 kg" in page and "200 TL&#39;den" in page or "200 TL'den" in page
+
+    c2 = app.test_client()
+    # seçenek seçmeden sipariş reddedilir
+    assert order(c2, "/s/ege-zeytin", [{"id": p1, "qty": 1}]).status_code == 400
+    # stoktan fazlası reddedilir
+    r = order(c2, "/s/ege-zeytin", [{"id": p1, "variant": small["id"], "qty": 3}])
+    assert r.status_code == 400 and "2 adet kaldı" in r.get_json()["error"]
+    # geçerli sipariş: 2×500g + 1×1kg; stok ayrılır
+    r = order(c2, "/s/ege-zeytin", [{"id": p1, "variant": small["id"], "qty": 2}, {"id": p1, "variant": big["id"], "qty": 1}])
+    assert r.status_code == 200, r.get_json()
+    oid = r.get_json()["id"]
+    o = core.get_order(oid)
+    assert o["subtotal"] == "750.00" and o["stock_reserved"] == 1
+    lines = core.order_lines(oid)
+    assert {(l["unit"], l["qty"]) for l in lines} == {("500 g", 2), ("1 kg", 1)}
+    assert core.variants_by_product([p1])[p1][0]["stock"] == 0
+    assert "Tükendi" not in c2.get("/s/ege-zeytin/").get_data(as_text=True).split("Siyah Zeytin")[1][:400]  # 1 kg hâlâ var
+    # stok bitti -> yeni sipariş reddedilir
+    assert order(c2, "/s/ege-zeytin", [{"id": p1, "variant": small["id"], "qty": 1}]).status_code == 400
+    # reddedilince stok geri gelir
+    c.post(f"/panel/orders/{oid}/status", data={"csrf": t, "status": "rejected"})
+    assert core.variants_by_product([p1])[p1][0]["stock"] == 2
+    assert core.get_order(oid)["stock_reserved"] == 0
+    # başka ürünün seçeneği kullanılamaz
+    assert order(c2, "/s/ege-zeytin", [{"id": p2, "variant": small["id"], "qty": 1}]).status_code == 400
+
+
+def test_simple_stock_and_cancel(app):
+    c, biz, (p1, p2, _), t = _owner(app)
+    c.post(f"/panel/products/{p2}", data={"csrf": t, "name": "Zeytinyağı", "price": "1800", "unit": "5 lt",
+                                          "stock": "1", "available": "1", "visible": "1"})
+    assert db.one("SELECT stock FROM products WHERE id = ?", (p2,))["stock"] == 1
+    page = c.get("/s/ege-zeytin/").get_data(as_text=True)
+    assert "Son 1 adet" in page
+    c2 = app.test_client()
+    oid = order(c2, "/s/ege-zeytin", [{"id": p2, "qty": 1}]).get_json()["id"]
+    assert db.one("SELECT stock FROM products WHERE id = ?", (p2,))["stock"] == 0
+    assert order(c2, "/s/ege-zeytin", [{"id": p2, "qty": 1}]).status_code == 400
+    c.post(f"/panel/orders/{oid}/status", data={"csrf": t, "status": "approved"})
+    c.post(f"/panel/orders/{oid}/status", data={"csrf": t, "status": "cancelled"})
+    assert db.one("SELECT stock FROM products WHERE id = ?", (p2,))["stock"] == 1
+    # geçersiz stok değeri
+    r = c.post(f"/panel/products/{p2}", data={"csrf": t, "name": "Zeytinyağı", "price": "1800", "stock": "abc",
+                                              "available": "1", "visible": "1"}, follow_redirects=True)
+    assert "tam sayı" in r.get_data(as_text=True)
+
+
+def test_whatsapp_messages(app):
+    c, biz, (p1, _, _), t = _owner(app)
+    oid = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}], payment="iban").get_json()["id"]
+    c.post(f"/panel/orders/{oid}/status", data={"csrf": t, "status": "approved", "message": "Yarın kargoda"})
+    page = c.get(f"/panel/orders/{oid}").get_data(as_text=True)
+    assert "Müşteriye haber ver" in page and "https://wa.me/905321112233?text=" in page
+    link = re.search(r'href="(https://wa\.me/905321112233\?text=[^"]+)"', page).group(1)
+    from urllib.parse import unquote
+    text = unquote(link.split("text=")[1].replace("&amp;", "&"))
+    assert "Merhaba Ayşe" in text and "onaylandı" in text and "Yarın kargoda" in text
+    assert "TR33 0006" in text and f"/s/ege-zeytin/o/" in text
+    # kargo + yola çıkar
+    r = c.post(f"/panel/orders/{oid}/cargo", data={"csrf": t, "cargo_company": "Aras Kargo", "cargo_tracking": "123456789",
+                                                   "cargo_url": "https://kargotakip.example/123", "and_ship": "1"},
+               follow_redirects=True)
+    assert core.get_order(oid)["status"] == "on_the_way"
+    text = unquote(r.get_data(as_text=True))
+    assert "yola çıktı" in text and "Aras Kargo 123456789" in text
+    tok = core.get_order(oid)["token"]
+    j = c.get(f"/s/ege-zeytin/o/{tok}.json").get_json()
+    assert j["cargo"]["no"] == "123456789" and j["cargo"]["url"].startswith("https://")
+    assert c.post(f"/panel/orders/{oid}/cargo", data={"csrf": t, "cargo_url": "javascript:alert(1)"},
+                  follow_redirects=True).status_code == 200
+    assert core.get_order(oid)["cargo_url"] == "https://kargotakip.example/123"
+
+
+def test_admin_impersonation(app):
+    c = app.test_client()
+    biz = make_biz(c)
+    setup_shop(biz)
+    login(c, "admin@x.com", "adminpass123")
+    t = csrf(c, "/admin/")
+    assert "Paneline gir" in c.get(f"/admin/{biz['id']}").get_data(as_text=True)
+    r = c.post(f"/admin/{biz['id']}/enter", data={"csrf": t}, follow_redirects=True)
+    html = r.get_data(as_text=True)
+    assert "Yönetici olarak" in html and "Ege Zeytin" in html
+    assert c.get("/panel/products").status_code == 200
+    r = c.post("/panel/products/new", data={"csrf": t, "name": "Kurulum ürünü", "price": "100", "available": "1",
+                                            "visible": "1"}, follow_redirects=True)
+    assert db.one("SELECT business_id FROM products WHERE name = 'Kurulum ürünü'")["business_id"] == biz["id"]
+    assert c.post("/panel/push/subscribe", headers={"X-CSRF-Token": t}, json={
+        "endpoint": "https://fcm.googleapis.com/x", "keys": {"p256dh": "a", "auth": "b"}}).status_code == 400
+    c.post("/admin/exit", data={"csrf": t})
+    assert c.get("/panel/orders").status_code == 302      # yönetici kendi başına işletmesiz
+    # işletme sahibi bu uçları kullanamaz
+    c3 = app.test_client()
+    login(c3, "sahip@ege.com", "sahip12345")
+    t3 = csrf(c3, "/panel/orders")
+    assert c3.post(f"/admin/{biz['id']}/enter", data={"csrf": t3}).status_code == 403

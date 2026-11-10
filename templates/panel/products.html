@@ -13,11 +13,16 @@
     <li id="p{{ p.id }}" class="{{ 'is-hidden' if not p.visible }} {{ 'is-out' if not p.available }}">
       <a class="pl-main" href="{{ url_for('panel.product_form', product_id=p.id) }}">
         {% if p.image_id %}<img src="/img/{{ p.image_id }}" alt="" loading="lazy">{% else %}<span class="pl-noimg">{{ p.name[:1]|upper }}</span>{% endif %}
-        <span><b>{{ p.name }}</b><small>{{ p.unit }}{% if p.unit %} · {% endif %}{{ tl(p.price) }}{% if not p.visible %} · gizli{% endif %}</small></span>
+        {% set vs = vmap.get(p.id, []) %}
+        <span><b>{{ p.name }}</b><small>
+          {% if vs %}{{ vs|length }} seçenek · {{ tl(p.price) }}'den{% set out = vs|selectattr('stock', 'equalto', 0)|list %}{% if out %} · <em class="is-bad">{{ out|length }} tükendi</em>{% endif %}
+          {% else %}{{ p.unit }}{% if p.unit %} · {% endif %}{{ tl(p.price) }}{% if p.stock is not none %} · <em class="{{ 'is-bad' if p.stock <= 3 else '' }}">stok {{ p.stock }}</em>{% endif %}{% endif %}
+          {% if not p.visible %} · gizli{% endif %}</small></span>
       </a>
       <div class="pl-act">
         <form method="post" action="{{ url_for('panel.product_toggle', product_id=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}">
-          <button class="chip {{ 'is-on' if p.available else 'is-off' }}" type="submit" title="Stok durumunu değiştir">{{ 'Satışta' if p.available else 'Tükendi' }}</button></form>
+          {% set ok = product_available(p, vmap.get(p.id)) %}
+          <button class="chip {{ 'is-on' if ok else 'is-off' }}" type="submit" title="Satışa aç / kapat">{{ 'Satışta' if ok else ('Stok yok' if p.available else 'Kapalı') }}</button></form>
         <form method="post" action="{{ url_for('panel.product_move', product_id=p.id) }}" class="mv"><input type="hidden" name="csrf" value="{{ csrf_token() }}">
           <button name="dir" value="up" type="submit" aria-label="Yukarı taşı">↑</button><button name="dir" value="down" type="submit" aria-label="Aşağı taşı">↓</button></form>
       </div>

@@ -10,7 +10,7 @@ Kurallar
 """
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
@@ -36,7 +36,7 @@ TRANSITIONS = {
     "rejected": set(),
     "cancelled": set(),
 }
-PAYMENT = {"cash": "Nakit (teslimde)", "iban": "IBAN / havale"}
+PAYMENT = {"cash": "Nakit (teslimde)", "iban": "IBAN / havale", "card": "Kartla online"}
 FULFILMENT = {"delivery": "Adrese teslim", "pickup": "Gel al"}
 
 
@@ -184,14 +184,42 @@ def catalog(biz_id, only_visible=True):
 
 # ── Sipariş ─────────────────────────────────────────────────────────────────
 
-def delivery_fee_for(biz, subtotal, fulfilment):
+def zones(biz_id):
+    return db.query("SELECT * FROM shipping_zones WHERE business_id = ? ORDER BY position, id", (biz_id,))
+
+
+def delivery_fee_for(biz, subtotal, fulfilment, zone=None):
     if fulfilment != "delivery":
         return Decimal("0.00")
-    fee = money(biz["delivery_fee"])
-    free_over = money(biz["free_delivery_over"])
+    fee = money(zone["fee"] if zone else biz["delivery_fee"])
+    free_over = money(zone["free_over"] if zone else biz["free_delivery_over"])
     if free_over > 0 and subtotal >= free_over:
         return Decimal("0.00")
     return fee
+
+
+def variants_by_product(product_ids):
+    if not product_ids:
+        return {}
+    marks = ",".join("?" for _ in product_ids)
+    out = {}
+    for v in db.query(f"SELECT * FROM product_variants WHERE product_id IN ({marks}) ORDER BY position, id",
+                      tuple(product_ids)):
+        out.setdefault(v["product_id"], []).append(v)
+    return out
+
+
+def in_stock(stock, qty=1):
+    return stock is None or int(stock) >= qty
+
+
+def product_available(p, variants=None):
+    """Satışta mı? 'Satışta' işareti + stok (seçenekliyse en az bir seçenekte stok)."""
+    if not p["available"]:
+        return False
+    if variants:
+        return any(in_stock(v["stock"]) for v in variants)
+    return in_stock(p["stock"])
 
 
 def get_or_create_customer(biz_id, phone, name, address):
@@ -202,14 +230,81 @@ def get_or_create_customer(biz_id, phone, name, address):
             changes["address"] = address
         db.update("customers", c["id"], changes)
         return c["id"]
-    return db.insert("customers", {"business_id": biz_id, "phone": phone, "name": name,
-                                   "address": address, "created_at": now()})
+    cid = db.insert("customers", {"business_id": biz_id, "phone": phone, "name": name,
+                                  "address": address, "created_at": now()})
+    db.update("customers", cid, {"ref_code": ref_code_for(cid)})
+    return cid
+
+
+REF_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+def ref_code_for(customer_id):
+    """Müşteriye özel kısa davet kodu (ör. K7P2X). Sırası tahmin edilemesin diye karıştırılır."""
+    n = (int(customer_id) * 2654435761 + 97) % (32 ** 5)
+    code = ""
+    for _ in range(5):
+        n, r = divmod(n, 32)
+        code += REF_ALPHABET[r]
+    return code
+
+
+def customer_ref_code(customer):
+    if customer.get("ref_code"):
+        return customer["ref_code"]
+    code = ref_code_for(customer["id"])
+    db.update("customers", customer["id"], {"ref_code": code})
+    db.commit()
+    return code
+
+
+def prior_orders(biz_id, phone):
+    r = db.one("SELECT COUNT(*) AS n FROM orders WHERE business_id = ? AND customer_phone = ? "
+               "AND status NOT IN ('rejected', 'cancelled')", (biz_id, phone))
+    return int(r["n"])
+
+
+def first_order_offer(biz):
+    """Mağazada gösterilecek ilk sipariş indirimi metni ya da None."""
+    if not biz["first_discount_active"]:
+        return None
+    val = money(biz["first_discount_value"])
+    if val <= 0:
+        return None
+    if biz["first_discount_type"] == "percent":
+        return f"İlk siparişine %{int(val) if val == int(val) else val} indirim"
+    return f"İlk siparişine {tl(val)} indirim"
+
+
+def first_order_discount(biz, subtotal):
+    if not first_order_offer(biz):
+        return Decimal("0.00")
+    val = money(biz["first_discount_value"])
+    if biz["first_discount_type"] == "percent":
+        d = (subtotal * min(val, Decimal(90)) / 100).quantize(Decimal("0.01"), ROUND_HALF_UP)
+    else:
+        d = val
+    return min(d, subtotal)
+
+
+def card_ready(biz):
+    return bool(biz["pay_card"] and biz["paytr_merchant_id"] and biz["paytr_key_enc"] and biz["paytr_salt_enc"])
+
+
+def payment_options(biz):
+    opts = [k for k in ("cash", "iban") if biz["pay_" + k]]
+    if card_ready(biz):
+        opts.append("card")
+    return opts
 
 
 def create_order(biz, data):
-    """data: {items:[{id, qty}], name, phone, address, note, payment, fulfilment}. Döner: order dict."""
+    """data: {items:[{id, variant, qty}], name, phone, address, note, payment, fulfilment, zone, ref,
+    birth_day, birth_month, marketing_ok}. Döner: order dict."""
     if not biz["ordering_open"]:
         raise OrderError(biz["closed_message"] or "Şu an sipariş alınmıyor.")
+    if not subscription_ok(biz):
+        raise OrderError("Bu mağaza şu an sipariş almıyor.")
     name = " ".join(str(data.get("name") or "").split())[:80]
     if len(name) < 2:
         raise OrderError("Adını ve soyadını yaz.")
@@ -218,8 +313,7 @@ def create_order(biz, data):
         raise OrderError("Telefon numaranı 05XX XXX XX XX şeklinde yaz.")
 
     payment = data.get("payment")
-    allowed_pay = [k for k in PAYMENT if biz["pay_" + k]]
-    if payment not in allowed_pay:
+    if payment not in payment_options(biz):
         raise OrderError("Bir ödeme yöntemi seç.")
     fulfilment = data.get("fulfilment")
     allowed_ful = [k for k in FULFILMENT if biz[k]]
@@ -228,6 +322,17 @@ def create_order(biz, data):
     address = str(data.get("address") or "").strip()[:400]
     if fulfilment == "delivery" and len(address) < 10:
         raise OrderError("Teslimat adresini açık yaz (mahalle, sokak, no).")
+    zone = None
+    if fulfilment == "delivery":
+        zs = zones(biz["id"])
+        if zs:
+            try:
+                zid = int(data.get("zone") or 0)
+            except (TypeError, ValueError):
+                zid = 0
+            zone = next((z for z in zs if z["id"] == zid), None)
+            if not zone:
+                raise OrderError("Teslimat bölgeni seç.")
     note = str(data.get("note") or "").strip()[:400]
 
     items = data.get("items") or []
@@ -239,36 +344,83 @@ def create_order(biz, data):
     for it in items:
         try:
             pid, qty = int(it.get("id")), int(it.get("qty"))
+            vid = int(it["variant"]) if it.get("variant") not in (None, "", 0, "0") else None
         except (TypeError, ValueError, AttributeError):
             raise OrderError("Sepet okunamadı, sayfayı yenileyip tekrar dene.") from None
         if qty < 1 or qty > MAX_QTY:
             raise OrderError(f"Bir üründen en fazla {MAX_QTY} adet sipariş verilebilir.")
-        wanted[pid] = wanted.get(pid, 0) + qty
+        wanted[(pid, vid)] = wanted.get((pid, vid), 0) + qty
 
-    marks = ",".join("?" for _ in wanted)
+    pids = sorted({k[0] for k in wanted})
+    marks = ",".join("?" for _ in pids)
     prods = {p["id"]: p for p in db.query(
-        f"SELECT * FROM products WHERE business_id = ? AND id IN ({marks})", (biz["id"], *wanted))}
+        f"SELECT * FROM products WHERE business_id = ? AND id IN ({marks})", (biz["id"], *pids))}
+    vmap = variants_by_product(list(prods))
     lines, subtotal = [], Decimal("0.00")
-    for pid, qty in wanted.items():
+    for (pid, vid), qty in wanted.items():
         p = prods.get(pid)
         if not p or not p["visible"]:
             raise OrderError("Sepetindeki bir ürün artık satışta değil. Sayfayı yenile.")
         if not p["available"]:
             raise OrderError(f"{p['name']} şu an tükendi, sepetten çıkar.")
-        price = money(p["price"])
+        vs = vmap.get(pid, [])
+        if vs:
+            v = next((x for x in vs if x["id"] == vid), None)
+            if not v:
+                raise OrderError(f"{p['name']} için bir seçenek seç (sayfayı yenile).")
+            price, unit, stock = money(v["price"]), v["name"], v["stock"]
+        else:
+            if vid:
+                raise OrderError("Sepet okunamadı, sayfayı yenileyip tekrar dene.")
+            v, price, unit, stock = None, money(p["price"]), p["unit"], p["stock"]
+        label = f"{p['name']} ({unit})" if v else p["name"]
+        if stock is not None and int(stock) < qty:
+            raise OrderError(f"{label} için stokta {int(stock)} adet kaldı." if int(stock) > 0 else f"{label} tükendi.")
         lt = (price * qty).quantize(Decimal("0.01"))
         subtotal += lt
-        lines.append({"product_id": pid, "name": p["name"], "unit": p["unit"], "price": str(price),
-                      "qty": qty, "line_total": str(lt)})
+        lines.append({"product_id": pid, "variant_id": v["id"] if v else None, "name": p["name"], "unit": unit,
+                      "price": str(price), "qty": qty, "line_total": str(lt), "_tracked": stock is not None})
 
     min_order = money(biz["min_order"])
     if min_order > 0 and subtotal < min_order:
         raise OrderError(f"En az sipariş tutarı {tl(min_order)}. Sepetine {tl(min_order - subtotal)} daha ekle.")
-    fee = delivery_fee_for(biz, subtotal, fulfilment)
-    total = subtotal + fee
+
+    is_first = prior_orders(biz["id"], phone) == 0
+    discount, discount_note = Decimal("0.00"), ""
+    if is_first and first_order_offer(biz):
+        discount = first_order_discount(biz, subtotal)
+        discount_note = first_order_offer(biz)
+    fee = delivery_fee_for(biz, subtotal, fulfilment, zone)
+    total = subtotal - discount + fee
+
+    referrer_id = None
+    ref = str(data.get("ref") or "").strip().upper()[:10]
+    if ref and is_first and biz["referral_active"]:
+        r = db.one("SELECT id, phone FROM customers WHERE business_id = ? AND ref_code = ?", (biz["id"], ref))
+        if r and r["phone"] != phone:
+            referrer_id = r["id"]
 
     try:
         cust_id = get_or_create_customer(biz["id"], phone, name, address if fulfilment == "delivery" else "")
+        extra = {}
+        try:
+            bd, bm = int(data.get("birth_day") or 0), int(data.get("birth_month") or 0)
+            if 1 <= bd <= 31 and 1 <= bm <= 12:
+                extra.update(birth_day=bd, birth_month=bm)
+        except (TypeError, ValueError):
+            pass
+        if data.get("marketing_ok"):
+            extra["marketing_ok"] = 1
+        if extra:
+            db.update("customers", cust_id, extra)
+        # Stok ayır (yarış durumuna karşı koşullu güncelleme)
+        for ln in lines:
+            if not ln["_tracked"]:
+                continue
+            table, rid = ("product_variants", ln["variant_id"]) if ln["variant_id"] else ("products", ln["product_id"])
+            if db.execute_rc(f"UPDATE {table} SET stock = stock - ? WHERE id = ? AND stock >= ?",
+                             (ln["qty"], rid, ln["qty"])) != 1:
+                raise OrderError(f"{ln['name']} stoğu az önce tükendi. Sepetini güncelle.")
         ts = now()
         order_id = db.insert("orders", {
             "business_id": biz["id"], "customer_id": cust_id, "token": secrets.token_urlsafe(16),
@@ -276,15 +428,32 @@ def create_order(biz, data):
             "customer_name": name, "customer_phone": phone,
             "address": address if fulfilment == "delivery" else "", "note": note,
             "subtotal": str(subtotal), "delivery_fee": str(fee), "total": str(total),
+            "discount": str(discount), "discount_note": discount_note,
+            "zone_name": zone["name"] if zone else "", "referred_by": referrer_id,
+            "stock_reserved": 1 if any(ln["_tracked"] for ln in lines) else 0,
             "counts_for_reward": 0, "created_at": ts, "updated_at": ts,
         })
         for ln in lines:
+            ln = {k: v for k, v in ln.items() if not k.startswith("_")}
             db.insert("order_lines", {"order_id": order_id, **ln})
         db.commit()
     except Exception:
         db.rollback()
         raise
     return get_order(order_id)
+
+
+def release_stock(order):
+    if not order.get("stock_reserved"):
+        return
+    for ln in order_lines(order["id"]):
+        if ln["variant_id"]:
+            db.execute("UPDATE product_variants SET stock = stock + ? WHERE id = ? AND stock IS NOT NULL",
+                       (ln["qty"], ln["variant_id"]))
+        elif ln["product_id"]:
+            db.execute("UPDATE products SET stock = stock + ? WHERE id = ? AND stock IS NOT NULL",
+                       (ln["qty"], ln["product_id"]))
+    db.update("orders", order["id"], {"stock_reserved": 0})
 
 
 def get_order(order_id):
@@ -322,36 +491,70 @@ def _order_qualifies(biz, order):
     return money(order["total"]) - money(order["delivery_fee"]) >= money(biz["reward_min_total"])
 
 
+KIND_LABEL = {"stamp": "Damga ödülü", "referral": "Davet ödülü", "birthday": "Doğum günü hediyesi"}
+
+
+def _add_reward(biz, customer_id, order_id, text, kind):
+    rid = db.insert("rewards", {"business_id": biz["id"], "customer_id": customer_id, "earned_order_id": order_id,
+                                "text": text, "kind": kind, "status": "earned", "created_at": now()})
+    return db.one("SELECT * FROM rewards WHERE id = ?", (rid,))
+
+
+def _birthday_due(biz, customer, today=None):
+    if not biz["birthday_active"] or not biz["birthday_text"] or not customer.get("birth_month"):
+        return False
+    today = today or datetime.now(TZ).date()
+    from datetime import date
+    for year in (today.year - 1, today.year, today.year + 1):
+        try:
+            bday = date(year, customer["birth_month"], customer["birth_day"])
+        except ValueError:                                 # 29 Şubat
+            bday = date(year, customer["birth_month"], 28)
+        if abs((bday - today).days) <= 7:
+            given = db.one("SELECT COUNT(*) AS n FROM rewards WHERE customer_id = ? AND kind = 'birthday' "
+                           "AND created_at >= ?", (customer["id"], f"{today.year}-01-01T00:00:00Z"))
+            return int(given["n"]) == 0
+    return False
+
+
 def set_status(biz, order, new_status, reason="", message=None):
-    """Durum değişikliği + ödül hesabı. Döner: (order, kazanılan_ödül ya da None)."""
+    """Durum değişikliği + ödül hesabı. Döner: (order, kazanılan_ödüller listesi)."""
     cur = order["status"]
     if new_status not in TRANSITIONS.get(cur, set()):
         raise OrderError(f"Bu sipariş '{STATUS[cur]}' durumunda; '{STATUS.get(new_status, new_status)}' yapılamaz.")
     changes = {"status": new_status, "updated_at": now()}
     if message is not None:
         changes["owner_message"] = message.strip()[:300]
-    earned = None
+    earned = []
     try:
         if new_status == "approved":
             changes["approved_at"] = now()
             changes["counts_for_reward"] = 1 if _order_qualifies(biz, order) else 0
-        if new_status == "rejected":
+        if new_status in ("rejected", "cancelled"):
             changes["reject_reason"] = (reason or "").strip()[:300]
+            release_stock(order)
         if new_status == "cancelled":
             changes["counts_for_reward"] = 0
-            changes["reject_reason"] = (reason or "").strip()[:300]
             db.execute("DELETE FROM rewards WHERE earned_order_id = ? AND status = 'earned'", (order["id"],))
             db.execute("UPDATE rewards SET status = 'earned', given_order_id = NULL, given_at = NULL "
                        "WHERE given_order_id = ?", (order["id"],))
+            if order.get("referred_by"):
+                db.execute("UPDATE customers SET referred_by = NULL WHERE id = ?", (order["customer_id"],))
         db.update("orders", order["id"], changes)
-        if new_status == "approved" and changes["counts_for_reward"]:
-            every = int(biz["reward_every"])
-            n = counted_orders(order["customer_id"])
-            if n > 0 and n % every == 0:
-                rid = db.insert("rewards", {"business_id": biz["id"], "customer_id": order["customer_id"],
-                                            "earned_order_id": order["id"], "text": biz["reward_text"],
-                                            "status": "earned", "created_at": now()})
-                earned = db.one("SELECT * FROM rewards WHERE id = ?", (rid,))
+        if new_status == "approved":
+            if changes["counts_for_reward"]:
+                every = int(biz["reward_every"])
+                n = counted_orders(order["customer_id"])
+                if n > 0 and n % every == 0:
+                    earned.append(_add_reward(biz, order["customer_id"], order["id"], biz["reward_text"], "stamp"))
+            customer = db.one("SELECT * FROM customers WHERE id = ?", (order["customer_id"],))
+            if order.get("referred_by") and biz["referral_active"] and biz["referral_text"] and not customer["referred_by"]:
+                db.update("customers", customer["id"], {"referred_by": order["referred_by"]})
+                earned.append(_add_reward(biz, customer["id"], order["id"], biz["referral_text"], "referral"))
+                _add_reward(biz, order["referred_by"], order["id"],
+                            f"{biz['referral_text']} (davet ettiğin {customer['name'].split()[0]} sipariş verdi)", "referral")
+            if _birthday_due(biz, customer):
+                earned.append(_add_reward(biz, customer["id"], order["id"], biz["birthday_text"], "birthday"))
         db.commit()
     except Exception:
         db.rollback()
@@ -452,3 +655,111 @@ def delete_payment(biz_id, payment_id):
         db.rollback()
         raise
     return p
+
+
+# ── Abonelik ────────────────────────────────────────────────────────────────
+
+PLANS = {"trial": "Deneme", "monthly": "Aylık", "yearly": "Yıllık", "free": "Ücretsiz (süresiz)"}
+
+
+def _parse(iso):
+    return datetime.strptime(iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc) if iso else None
+
+
+def subscription(biz):
+    """{plan, label, until, days_left, ok, warn}"""
+    plan = biz.get("plan") or "trial"
+    if plan == "free":
+        return {"plan": plan, "label": PLANS[plan], "until": None, "days_left": None, "ok": True, "warn": False}
+    until = _parse(biz.get("paid_until"))
+    if until is None:                                   # eski kayıt: açılıştan itibaren deneme
+        created = _parse(biz.get("created_at")) or datetime.now(timezone.utc)
+        until = created + timedelta(days=trial_days())
+    left = (until - datetime.now(timezone.utc)).total_seconds() / 86400
+    days = int(left) if left >= 0 else -1
+    return {"plan": plan, "label": PLANS.get(plan, plan), "until": until.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "days_left": days, "ok": left >= -grace_days(), "warn": left < 5, "expired": left < 0}
+
+
+def subscription_ok(biz):
+    return subscription(biz)["ok"]
+
+
+def trial_days():
+    try:
+        return int(db.get_setting("trial_days", "14"))
+    except ValueError:
+        return 14
+
+
+def trial_until():
+    return (datetime.now(timezone.utc) + timedelta(days=trial_days())).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def grace_days():
+    return 2
+
+
+def extend_subscription(biz, plan, days):
+    sub = subscription(biz)
+    base = _parse(sub["until"]) if sub["until"] else datetime.now(timezone.utc)
+    start = max(base, datetime.now(timezone.utc))
+    until = (start + timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    db.update("businesses", biz["id"], {"plan": plan, "paid_until": until})
+    db.commit()
+    return until
+
+
+# ── Müşteriye WhatsApp mesajları ────────────────────────────────────────────
+
+def wa_link(phone, text):
+    from urllib.parse import quote
+    return f"https://wa.me/90{phone}?text={quote(text)}"
+
+
+def customer_messages(biz, order, url, pay=None, rewards=()):
+    """Siparişin durumuna uygun hazır mesajlar: [(etiket, metin)]."""
+    first = (order["customer_name"] or "").split()[0] if order["customer_name"] else ""
+    hi = f"Merhaba {first}, {biz['name']} 👋"
+    no = f"#{order['id']}"
+    out = []
+    st = order["status"]
+    if st == "approved":
+        txt = f"{hi}\n{no} numaralı siparişin onaylandı, hazırlanıyor."
+        if order["owner_message"]:
+            txt += f"\n{order['owner_message']}"
+        if order["payment"] == "iban" and pay and pay["state"] in ("none", "partial"):
+            txt += (f"\n\nÖdeme: {tl(pay['remaining'])}\nIBAN: {pretty_iban(biz['iban'])}\n{biz['iban_holder']}"
+                    f"\nAçıklamaya 'Sipariş {order['id']}' yazmayı unutma.")
+        out.append(("Onay mesajı", txt + f"\n\nSiparişini buradan takip edebilirsin: {url}"))
+    elif st == "on_the_way":
+        if order["fulfilment"] == "delivery":
+            txt = f"{hi}\n{no} numaralı siparişin yola çıktı 🚚"
+            if order.get("cargo_tracking"):
+                txt += f"\nKargo: {order.get('cargo_company') or ''} {order['cargo_tracking']}".rstrip()
+                if order.get("cargo_url"):
+                    txt += f"\nTakip: {order['cargo_url']}"
+        else:
+            txt = f"{hi}\n{no} numaralı siparişin hazır, gelip alabilirsin."
+            if biz["pickup_address"]:
+                txt += f"\nAdres: {biz['pickup_address']}"
+        out.append(("Yola çıktı / hazır", txt + f"\n\nTakip: {url}"))
+    elif st == "delivered":
+        out.append(("Teşekkür", f"{hi}\nSiparişin teslim edildi, afiyet olsun! Bizi tercih ettiğin için teşekkürler 🙏"
+                                f"\nTekrar sipariş vermek için: {url}"))
+    elif st == "rejected":
+        txt = f"{hi}\nÜzgünüz, {no} numaralı siparişini bu sefer karşılayamıyoruz."
+        if order["reject_reason"]:
+            txt += f"\nSebep: {order['reject_reason']}"
+        out.append(("Red bilgisi", txt))
+    elif st == "pending":
+        out.append(("Soru sor", f"{hi}\n{no} numaralı siparişinle ilgili yazıyorum: "))
+    if pay and pay["state"] == "partial" and st not in ("rejected", "cancelled"):
+        out.append(("Ödeme hatırlatma", f"{hi}\n{no} numaralı siparişin için {tl(pay['paid'])} ödemeni aldık, "
+                                        f"kalan {tl(pay['remaining'])}.\nIBAN: {pretty_iban(biz['iban'])}\n{biz['iban_holder']}"))
+    elif pay and pay["state"] == "none" and order["payment"] == "iban" and st in ("on_the_way", "delivered"):
+        out.append(("Ödeme hatırlatma", f"{hi}\n{no} numaralı siparişin için {tl(pay['remaining'])} ödeme bekliyoruz."
+                                        f"\nIBAN: {pretty_iban(biz['iban'])}\n{biz['iban_holder']}"))
+    for r in rewards:
+        out.append(("Ödül müjdesi", f"{hi}\n🎁 Tebrikler! {r['text']} kazandın. Bir sonraki siparişinde seninle olacak."))
+    return out

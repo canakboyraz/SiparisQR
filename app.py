@@ -67,12 +67,20 @@ def login_required(view):
         u = current_user()
         if not u:
             return redirect(url_for("auth.login", next=request.path))
-        if not u["business_id"]:
+        g.impersonating = False
+        biz_id = u["business_id"]
+        if u["is_admin"] and session.get("as_biz"):
+            biz_id = session["as_biz"]
+            g.impersonating = True
+        if not biz_id:
             if u["is_admin"]:
                 return redirect(url_for("admin.index"))
             abort(403)
-        biz = db.one("SELECT * FROM businesses WHERE id = ?", (u["business_id"],))
-        if not biz or not biz["active"]:
+        biz = db.one("SELECT * FROM businesses WHERE id = ?", (biz_id,))
+        if not biz:
+            session.pop("as_biz", None)
+            abort(404)
+        if not biz["active"] and not g.impersonating:
             session.clear()
             abort(403, "Bu işletmenin hesabı kapalı.")
         g.biz = biz
@@ -110,8 +118,17 @@ def public_store_url(biz):
     """QR'a basılacak tam adres."""
     if biz["custom_domain"]:
         return f"https://{biz['custom_domain']}/"
-    base = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/") or request.host_url.rstrip("/")
-    return f"{base}/s/{biz['slug']}/"
+    return f"{public_base()}/s/{biz['slug']}/"
+
+
+def public_base():
+    return os.environ.get("PUBLIC_BASE_URL", "").rstrip("/") or request.host_url.rstrip("/")
+
+
+def public_order_url(biz, order):
+    if biz["custom_domain"]:
+        return f"https://{biz['custom_domain']}/o/{order['token']}"
+    return f"{public_base()}/s/{biz['slug']}/o/{order['token']}"
 
 
 def push_subject():

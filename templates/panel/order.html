@@ -50,8 +50,20 @@
 <p class="flash is-error">Sebep: {{ o.reject_reason }}</p>
 {% endif %}
 
+{% if msgs %}
+<section class="card wa-card" id="haber">
+  <h2>Müşteriye haber ver</h2>
+  <div class="wa-list">
+    {% for label, link in msgs %}
+    <a class="btn-wa" href="{{ link }}" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.3 14.2c-.2.6-1.3 1.2-1.8 1.3-.5.1-1 .1-1.7-.1-.4-.1-.9-.3-1.5-.6a11.6 11.6 0 0 1-4.5-4c-.3-.5-.8-1.4-.8-2.3 0-.9.5-1.4.7-1.6.2-.2.4-.3.6-.3h.4c.1 0 .3 0 .5.4l.7 1.7c.1.1.1.3 0 .4l-.3.5-.3.4c-.1.1-.2.3-.1.5.1.2.6 1 1.3 1.6.9.8 1.6 1 1.8 1.1.2.1.4.1.5-.1l.7-.9c.2-.2.3-.2.5-.1l1.6.8c.2.1.4.2.4.3.1.1.1.6-.1 1.2z"/></svg>{{ label }}</a>
+    {% endfor %}
+  </div>
+  <p class="muted">WhatsApp'ta mesaj hazır açılır, sadece "Gönder"e basarsın. Müşterinin takip linki mesajın içinde.</p>
+</section>
+{% endif %}
+
 {% if earned_here %}
-<p class="flash is-gift">🎁 Bu siparişle ödül kazanıldı: <b>{{ earned_here[0].text }}</b></p>
+{% for r in earned_here %}<p class="flash is-gift">🎁 Bu siparişle ödül kazanıldı: <b>{{ r.text }}</b> <small>({{ KIND_LABEL.get(r.kind, '') }})</small></p>{% endfor %}
 {% endif %}
 {% if card and card.rewards and o.status not in ('rejected', 'cancelled') %}
 <section class="card gift-card">
@@ -60,7 +72,7 @@
   <form method="post" action="{{ url_for('panel.give_reward', reward_id=r.id) }}" class="gift-row">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="order_id" value="{{ o.id }}">
     <input type="hidden" name="back" value="{{ url_for('panel.order', order_id=o.id) }}">
-    <span><b>{{ r.text }}</b><small>{{ local_time(r.created_at, '%d.%m.%Y') }} tarihinde kazandı</small></span>
+    <span><b>{{ r.text }}</b><small>{{ KIND_LABEL.get(r.kind, '') }} · {{ local_time(r.created_at, '%d.%m.%Y') }}</small></span>
     <button class="btn-sm" type="submit">Bu siparişle verildi</button>
   </form>
   {% endfor %}
@@ -72,7 +84,8 @@
   <h2>Ürünler</h2>
   <ul class="os-lines">
     {% for l in lines %}<li><span><b class="qty">{{ l.qty }}×</b> {{ l.name }}{% if l.unit %} <small>({{ l.unit }})</small>{% endif %}</span><b>{{ tl(l.line_total) }}</b></li>{% endfor %}
-    {% if o.fulfilment == 'delivery' %}<li><span>Teslimat ücreti</span><b>{{ tl(o.delivery_fee) }}</b></li>{% endif %}
+    {% if o.discount and o.discount|float > 0 %}<li class="is-disc"><span>{{ o.discount_note or 'İndirim' }}</span><b>−{{ tl(o.discount) }}</b></li>{% endif %}
+    {% if o.fulfilment == 'delivery' %}<li><span>Teslimat{% if o.zone_name %} · {{ o.zone_name }}{% endif %}</span><b>{{ tl(o.delivery_fee) }}</b></li>{% endif %}
     <li class="is-total"><span>Toplam</span><b>{{ tl(o.total) }}</b></li>
   </ul>
   {% if o.note %}<p class="note-box">📝 {{ o.note }}</p>{% endif %}
@@ -88,6 +101,27 @@
     {% if card and card.active %}<div><dt>Kampanya</dt><dd>{{ card.filled }} / {{ card.every }} damga · ödüle {{ card.left }} sipariş</dd></div>{% endif %}
   </dl>
 </section>
+
+{% if o.fulfilment == 'delivery' and o.status in ('approved', 'on_the_way', 'delivered') %}
+<section class="card" id="kargo">
+  <h2>Kargo / teslimat bilgisi</h2>
+  <form method="post" action="{{ url_for('panel.order_cargo', order_id=o.id) }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <div class="row2">
+      <label class="fld"><span>Firma</span>
+        <select name="cargo_company"><option value="">Seç</option>
+          {% for c in CARGO %}<option {% if o.cargo_company == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
+        </select></label>
+      <label class="fld"><span>Takip numarası</span><input name="cargo_tracking" value="{{ o.cargo_tracking }}" maxlength="80" inputmode="text" autocomplete="off"></label>
+    </div>
+    <label class="fld"><span>Takip linki <small>(isteğe bağlı, kargo sitesinden kopyala)</small></span><input name="cargo_url" value="{{ o.cargo_url }}" maxlength="400" inputmode="url" placeholder="https://..."></label>
+    <div class="act-row">
+      {% if o.status == 'approved' %}<button class="btn-primary" type="submit" name="and_ship" value="1">Kaydet ve "Yolda" yap</button>{% endif %}
+      <button class="btn-ghost" type="submit">Kaydet</button>
+    </div>
+  </form>
+</section>
+{% endif %}
 
 <section class="card pay" id="odeme">
   <div class="pay-head">

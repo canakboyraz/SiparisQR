@@ -6,7 +6,7 @@ from flask import Blueprint, Response, abort, g, jsonify, render_template, reque
 import core
 import db
 import webpush
-from app import push_subject, rate_limited, store_base
+from app import public_store_url, push_subject, rate_limited, store_base
 
 bp = Blueprint("store", __name__)
 
@@ -21,18 +21,33 @@ def _biz(slug=None):
 
 def _store_page(biz):
     groups = core.catalog(biz["id"])
-    products = {p["id"]: {"id": p["id"], "name": p["name"], "price": p["price"], "unit": p["unit"],
-                          "desc": p["description"], "img": url_for("store.image", image_id=p["image_id"]) if p["image_id"] else "",
-                          "ok": bool(p["available"])}
-                for _, items in groups for p in items}
+    vmap = core.variants_by_product([p["id"] for _, items in groups for p in items])
+    products = {}
+    for _, items in groups:
+        for p in items:
+            vs = vmap.get(p["id"], [])
+            products[p["id"]] = {
+                "id": p["id"], "name": p["name"], "price": p["price"], "unit": p["unit"], "desc": p["description"],
+                "img": url_for("store.image", image_id=p["image_id"]) if p["image_id"] else "",
+                "ok": core.product_available(p, vs), "left": p["stock"] if p["stock"] is not None else None,
+                "v": [{"id": v["id"], "name": v["name"], "price": v["price"], "ok": bool(p["available"]) and core.in_stock(v["stock"]),
+                       "left": v["stock"]} for v in vs],
+            }
+            p["_ok"] = products[p["id"]]["ok"]
+            p["_variants"] = vs
+    zs = core.zones(biz["id"])
     config = {
         "orderUrl": f"{g.base}/api/order", "statusBase": f"{g.base}/o/",
-        "cartKey": f"sepet:{biz['slug']}", "minOrder": str(core.money(biz["min_order"])),
+        "cartKey": f"sepet:{biz['slug']}", "refKey": f"davet:{biz['slug']}", "minOrder": str(core.money(biz["min_order"])),
         "deliveryFee": str(core.money(biz["delivery_fee"])),
         "freeOver": str(core.money(biz["free_delivery_over"])),
-        "open": bool(biz["ordering_open"]),
+        "zones": [{"id": z["id"], "name": z["name"], "fee": str(core.money(z["fee"])), "freeOver": str(core.money(z["free_over"]))} for z in zs],
+        "first": {"type": biz["first_discount_type"], "value": str(core.money(biz["first_discount_value"]))} if core.first_order_offer(biz) else None,
+        "open": bool(biz["ordering_open"]) and core.subscription_ok(biz),
     }
-    return render_template("store.html", biz=biz, groups=groups, products=products, config=config, reward=core.reward_rule(biz))
+    return render_template("store.html", biz=biz, groups=groups, products=products, config=config,
+                           reward=core.reward_rule(biz), first_offer=core.first_order_offer(biz), zones=zs,
+                           pay_options=core.payment_options(biz), sub_ok=core.subscription_ok(biz))
 
 
 @bp.get("/")
@@ -92,6 +107,8 @@ def place_slug(slug):
 def _status_data(biz, order):
     card = core.loyalty_card(biz, order["customer_id"])
     return {
+        "cargo": {"company": order["cargo_company"], "no": order["cargo_tracking"], "url": order["cargo_url"]}
+        if order["cargo_tracking"] or order["cargo_company"] else None,
         "id": order["id"], "status": order["status"], "label": core.STATUS[order["status"]],
         "message": order["owner_message"], "reason": order["reject_reason"], "paid": bool(order["paid"]),
         "paid_amount": core.tl(core.payment_state(order)["paid"]) if order["paid_cents"] else "",
@@ -112,8 +129,17 @@ def _status(biz, token, as_json=False):
         resp = jsonify(data)
         resp.headers["Cache-Control"] = "no-store"
         return resp
-    return render_template("status.html", biz=biz, order=order, lines=core.order_lines(order["id"]),
-                           data=data)
+    lines = core.order_lines(order["id"])
+    customer = db.one("SELECT * FROM customers WHERE id = ?", (order["customer_id"],))
+    invite = None
+    if biz["referral_active"] and biz["referral_text"] and order["status"] in core.COUNTED:
+        invite = public_store_url(biz) + "?ref=" + core.customer_ref_code(customer)
+    reorder = [{"id": l["product_id"], "variant": l["variant_id"], "qty": l["qty"]} for l in lines if l["product_id"]]
+    card_pay = None
+    if order["payment"] == "card" and not order["paid"] and order["status"] not in ("rejected", "cancelled"):
+        card_pay = f"{g.base}/pay/{order['token']}"
+    return render_template("status.html", biz=biz, order=order, lines=lines, data=data, invite=invite,
+                           reorder=reorder, card_pay=card_pay, cart_key=f"sepet:{biz['slug']}")
 
 
 @bp.get("/o/<token>")

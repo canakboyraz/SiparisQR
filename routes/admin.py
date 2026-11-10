@@ -1,7 +1,7 @@
 """Platform yöneticisi: işletme açma, domain bağlama, hesabı açıp kapatma, şifre sıfırlama."""
 import secrets
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import Blueprint, abort, flash, redirect, render_template, request, session, url_for
 from werkzeug.security import generate_password_hash
 
 import core
@@ -67,6 +67,7 @@ def new():
             try:
                 biz_id = db.insert("businesses", {"slug": form["slug"], "name": form["name"],
                                                   "custom_domain": form["domain"] or None, "active": 1,
+                                                  "plan": "trial", "paid_until": core.trial_until(),
                                                   "created_at": core.now()})
                 db.insert("users", {"business_id": biz_id, "email": form["email"], "name": form["owner_name"],
                                     "password_hash": generate_password_hash(password), "is_admin": 0,
@@ -111,3 +112,19 @@ def edit(biz_id):
             db.commit()
         b = db.one("SELECT * FROM businesses WHERE id = ?", (biz_id,))
     return render_template("admin/edit.html", b=b, owner=owner, new_password=new_password)
+
+
+@bp.post("/<int:biz_id>/enter")
+@admin_required
+def enter(biz_id):
+    if not db.one("SELECT id FROM businesses WHERE id = ?", (biz_id,)):
+        abort(404)
+    session["as_biz"] = biz_id
+    return redirect(url_for("panel.orders"))
+
+
+@bp.post("/exit")
+@admin_required
+def exit_panel():
+    biz_id = session.pop("as_biz", None)
+    return redirect(url_for("admin.edit", biz_id=biz_id) if biz_id else url_for("admin.index"))

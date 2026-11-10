@@ -383,4 +383,39 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:
 @media(max-width:380px){.pn-tabs{padding-left:0;padding-right:0}.pn-tabs a{font-size:10px;letter-spacing:-.02em;padding:5px 0}.pn-tabs svg{width:22px;height:22px}}
 .pn-tabs span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .card[id]{scroll-margin-top:76px}
+/* Seçenekler */
+.vr-row{display:grid;grid-template-columns:1.3fr 1fr .8fr 38px;gap:6px;margin:0 0 8px;align-items:center}
+.vr-row input{width:100%;min-height:44px;padding:8px 10px;border:1.5px solid var(--line);border-radius:10px;font-size:16px;background:#fff;min-width:0}
+.vr-row input:focus{outline:0;border-color:var(--accent)}
+.vr .btn-sm{align-self:flex-start}
+/* WhatsApp */
+.wa-list{display:flex;flex-direction:column;gap:8px;margin:0 0 8px}
+.btn-wa{display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;border-radius:12px;background:#25D366;color:#073B1C;font-weight:700;text-decoration:none}
+.btn-wa svg{width:22px;height:22px;fill:currentColor}
+.btn-wa:active{transform:scale(.98)}
+.pn-imp{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 16px;background:#1F5C99;color:#fff;font-size:14px}
+.pn-imp form{margin:0}.pn-imp .btn-sm{background:#fff;color:#1F5C99;min-height:34px}
+.os-lines .is-disc{color:var(--ok)}
+em.is-bad{font-style:normal;color:var(--bad);font-weight:700}
+/* Mağaza ekleri */
+.st-low{display:inline-block;margin-top:2px;font-size:12.5px;font-weight:700;color:#B26B00}
+.st-price small{font-size:14px;font-weight:700}
+.st-first{background:#E8F3EC;color:var(--ok)}.st-first small{color:#3F7A58}
+.st-ref{margin:10px 0 0;padding:11px 14px;border-radius:14px;background:#E3EEF9;color:#1F5C99;font-size:14.5px}
+.st-vars{margin:14px 0 0}
+.st-vars label{min-width:calc(33% - 6px);flex:1 1 calc(33% - 6px)}
+.st-vars span{min-height:56px}
+.st-vars span b{font-size:15px}
+.st-vars input:disabled+span{opacity:.45;text-decoration:line-through}
+.st-plus.has-n{font-size:16px;font-weight:800;background:color-mix(in srgb,var(--accent) 85%,#000)}
+.shake{animation:shake .35s}
+@keyframes shake{25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+.row2.is-tight{grid-template-columns:1fr 1fr;gap:8px}
+.row2.is-tight select{width:100%;min-height:48px;padding:10px 12px;border:1.5px solid var(--line);border-radius:12px;background:#fff;font-size:16px}
+.st-sum .is-disc dt,.st-sum .is-disc dd{color:var(--ok)}
+.os-cargo p{margin:0 0 12px}
+.os-cargo .act-row>*,.os-invite .act-row>*{flex:1 1 140px}
+.os-invite p{margin:0 0 12px;color:var(--ink-2)}
+.os-reorder{width:100%;margin:0 0 14px}
+.os-lines .is-disc{color:var(--ok)}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}

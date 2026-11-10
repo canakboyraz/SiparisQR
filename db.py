@@ -166,6 +166,40 @@ CREATE TABLE IF NOT EXISTS payments (
   created_by INTEGER,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS product_variants (
+  id {pk},
+  business_id INTEGER NOT NULL,
+  product_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  price TEXT NOT NULL,
+  stock INTEGER,
+  position INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS ix_variants_product ON product_variants (product_id);
+CREATE TABLE IF NOT EXISTS shipping_zones (
+  id {pk},
+  business_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  fee TEXT NOT NULL DEFAULT '0',
+  free_over TEXT NOT NULL DEFAULT '0',
+  position INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS card_payments (
+  id {pk},
+  business_id INTEGER NOT NULL,
+  order_id INTEGER NOT NULL,
+  merchant_oid TEXT NOT NULL UNIQUE,
+  amount_cents INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'started',
+  reason TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS broadcasts (
+  id {pk},
+  business_id INTEGER NOT NULL,
+  message TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS ix_payments_order ON payments (order_id);
 CREATE INDEX IF NOT EXISTS ix_orders_biz ON orders (business_id, status);
 CREATE INDEX IF NOT EXISTS ix_orders_cust ON orders (customer_id);
@@ -178,6 +212,43 @@ CREATE INDEX IF NOT EXISTS ix_rewards_cust ON rewards (customer_id, status);
 MIGRATIONS = [
     ("orders", "internal_note", "TEXT NOT NULL DEFAULT ''"),
     ("orders", "paid_cents", "INTEGER NOT NULL DEFAULT 0"),
+    # 1. aşama: seçenek + stok
+    ("products", "stock", "INTEGER"),
+    ("order_lines", "variant_id", "INTEGER"),
+    ("orders", "stock_reserved", "INTEGER NOT NULL DEFAULT 0"),
+    # 2. aşama: kargo + bölge
+    ("orders", "zone_name", "TEXT NOT NULL DEFAULT ''"),
+    ("orders", "cargo_company", "TEXT NOT NULL DEFAULT ''"),
+    ("orders", "cargo_tracking", "TEXT NOT NULL DEFAULT ''"),
+    ("orders", "cargo_url", "TEXT NOT NULL DEFAULT ''"),
+    # 3. aşama: kampanyalar + kart
+    ("orders", "discount", "TEXT NOT NULL DEFAULT '0'"),
+    ("orders", "discount_note", "TEXT NOT NULL DEFAULT ''"),
+    ("orders", "referred_by", "INTEGER"),
+    ("customers", "birth_day", "INTEGER"),
+    ("customers", "birth_month", "INTEGER"),
+    ("customers", "marketing_ok", "INTEGER NOT NULL DEFAULT 0"),
+    ("customers", "ref_code", "TEXT"),
+    ("customers", "referred_by", "INTEGER"),
+    ("rewards", "kind", "TEXT NOT NULL DEFAULT 'stamp'"),
+    ("businesses", "first_discount_active", "INTEGER NOT NULL DEFAULT 0"),
+    ("businesses", "first_discount_type", "TEXT NOT NULL DEFAULT 'percent'"),
+    ("businesses", "first_discount_value", "TEXT NOT NULL DEFAULT '0'"),
+    ("businesses", "birthday_active", "INTEGER NOT NULL DEFAULT 0"),
+    ("businesses", "birthday_text", "TEXT NOT NULL DEFAULT ''"),
+    ("businesses", "referral_active", "INTEGER NOT NULL DEFAULT 0"),
+    ("businesses", "referral_text", "TEXT NOT NULL DEFAULT ''"),
+    ("businesses", "pay_card", "INTEGER NOT NULL DEFAULT 0"),
+    ("businesses", "paytr_merchant_id", "TEXT NOT NULL DEFAULT ''"),
+    ("businesses", "paytr_key_enc", "TEXT NOT NULL DEFAULT ''"),
+    ("businesses", "paytr_salt_enc", "TEXT NOT NULL DEFAULT ''"),
+    ("businesses", "paytr_test", "INTEGER NOT NULL DEFAULT 1"),
+    ("businesses", "instagram", "TEXT NOT NULL DEFAULT ''"),
+    # 4. aşama: abonelik
+    ("businesses", "plan", "TEXT NOT NULL DEFAULT 'trial'"),
+    ("businesses", "paid_until", "TEXT"),
+    ("businesses", "is_demo", "INTEGER NOT NULL DEFAULT 0"),
+    ("businesses", "self_signup", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 
@@ -265,6 +336,13 @@ def update(table, row_id, values):
         return
     sets = ", ".join(f"{k} = ?" for k in values)
     execute(f"UPDATE {table} SET {sets} WHERE id = ?", [*values.values(), row_id])
+
+
+def execute_rc(sql, params=()):
+    """Yazma sorgusu; etkilenen satır sayısını döner."""
+    cur = conn().cursor()
+    cur.execute(_sql(sql), tuple(params))
+    return cur.rowcount
 
 
 def commit():

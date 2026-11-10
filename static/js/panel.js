@@ -35,7 +35,7 @@
 
   // ── Bildirim önerisi şeridi ──
   var banner = $("pn-push");
-  if (banner && !$("np") && hasPush) {
+  if (banner && !banner.hasAttribute("data-off") && !$("np") && hasPush) {
     registration().then(function (reg) { return reg.pushManager.getSubscription(); }).then(function (sub) {
       var dismissed = false;
       try { dismissed = localStorage.getItem("push-dismiss") === "1"; } catch (e) {}

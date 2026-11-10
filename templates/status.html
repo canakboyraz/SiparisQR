@@ -26,6 +26,23 @@
     </ol>
   </section>
 
+  <section class="os-card os-cargo" id="os-cargo" {% if not data.cargo %}hidden{% endif %}>
+    <h2>Kargo</h2>
+    <p><span id="os-cargo-co">{{ data.cargo.company if data.cargo else '' }}</span> · <code id="os-cargo-no">{{ data.cargo.no if data.cargo else '' }}</code></p>
+    <div class="act-row">
+      <button type="button" class="btn-ghost" id="os-cargo-copy" data-copy="{{ data.cargo.no if data.cargo else '' }}" {% if not (data.cargo and data.cargo.no) %}hidden{% endif %}>Takip no'yu kopyala</button>
+      <a class="btn-primary" id="os-cargo-url" href="{{ data.cargo.url if data.cargo else '#' }}" target="_blank" rel="noopener" {% if not (data.cargo and data.cargo.url) %}hidden{% endif %}>Kargoyu takip et</a>
+    </div>
+  </section>
+
+  {% if card_pay %}
+  <section class="os-card os-iban">
+    <h2>Kartla ödeme</h2>
+    <p>Toplam <b>{{ tl(order.total) }}</b>. Ödeme güvenli PayTR sayfasında yapılır; kart bilgin {{ biz.name }}'e iletilmez.</p>
+    <a class="btn-primary btn-big" href="{{ card_pay }}">Kartla öde</a>
+  </section>
+  {% endif %}
+
   {% if order.payment == 'iban' and order.status not in ('rejected', 'cancelled') %}
   <section class="os-card os-iban" id="os-iban" {% if order.paid %}hidden{% endif %}>
     <h2>Ödeme bilgileri</h2>
@@ -53,7 +70,8 @@
     <h2>Sipariş özeti</h2>
     <ul class="os-lines">
       {% for l in lines %}<li><span>{{ l.qty }} × {{ l.name }}{% if l.unit %} <small>({{ l.unit }})</small>{% endif %}</span><b>{{ tl(l.line_total) }}</b></li>{% endfor %}
-      {% if order.fulfilment == 'delivery' %}<li><span>Teslimat</span><b>{{ tl(order.delivery_fee) if order.delivery_fee|float > 0 else 'Ücretsiz' }}</b></li>{% endif %}
+      {% if order.discount|float > 0 %}<li class="is-disc"><span>{{ order.discount_note or 'İndirim' }}</span><b>−{{ tl(order.discount) }}</b></li>{% endif %}
+      {% if order.fulfilment == 'delivery' %}<li><span>Teslimat{% if order.zone_name %} · {{ order.zone_name }}{% endif %}</span><b>{{ tl(order.delivery_fee) if order.delivery_fee|float > 0 else 'Ücretsiz' }}</b></li>{% endif %}
       <li class="is-total"><span>Toplam</span><b>{{ tl(order.total) }}</b></li>
     </ul>
     <dl class="os-meta">
@@ -64,6 +82,21 @@
       <div><dt>Tarih</dt><dd>{{ local_time(order.created_at) }}</dd></div>
     </dl>
   </section>
+
+  {% if invite %}
+  <section class="os-card os-invite">
+    <h2>Arkadaşını davet et 🎁</h2>
+    <p>Bu linkle ilk siparişini veren arkadaşın onaylanınca ikinize de <b>{{ biz.referral_text }}</b>.</p>
+    <div class="act-row">
+      <a class="btn-wa" href="https://wa.me/?text={{ (biz.name ~ '\'den sipariş vermek için bu linki kullan, ilk siparişte ikimize de hediye var: ' ~ invite)|urlencode }}" target="_blank" rel="noopener">WhatsApp'ta paylaş</a>
+      <button type="button" class="btn-ghost" data-copy="{{ invite }}">Linki kopyala</button>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if reorder and order.status in ('delivered', 'on_the_way', 'approved', 'rejected', 'cancelled') %}
+  <button type="button" class="btn-ghost btn-big os-reorder" id="os-reorder" data-items='{{ reorder|tojson }}' data-cart="{{ cart_key }}" data-store="{{ g.base }}/">↻ Aynı siparişi tekrar ver</button>
+  {% endif %}
 
   <p class="os-contact">
     Sorun mu var?
