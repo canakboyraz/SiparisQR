@@ -246,7 +246,7 @@
   form.addEventListener("submit", function (e) {
     e.preventDefault();
     showErr("");
-    var el = form.elements, pay = form.querySelector('input[name="payment"]:checked');
+    var el = form.elements, pay = form.querySelector('input[name="payment"]:checked') || form.querySelector('input[name="payment"]');
     var phone = (el.phone.value || "").replace(/\D/g, "");
     if (!count()) return showErr("Sepetin boş.");
     if ((el.name.value || "").trim().length < 2) { el.name.focus(); return showErr("Adını ve soyadını yaz."); }
@@ -286,6 +286,14 @@
         btn.disabled = false; btn.textContent = "Siparişi gönder";
       });
   });
+
+  // Açıklama uzunsa 3 satırda kes, "Devamını oku" göster
+  var about = $("st-about"), more = $("st-more");
+  if (about && more) {
+    var para = about.querySelector("p");
+    if (para.scrollHeight > para.clientHeight + 4) more.hidden = false;
+    more.addEventListener("click", function () { about.classList.add("is-open"); more.hidden = true; });
+  }
 
   render();
 })();

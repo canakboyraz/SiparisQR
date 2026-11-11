@@ -69,7 +69,7 @@ def setup_shop(biz, **extra):
 
 def order(client, base, items, **kw):
     body = {"items": items, "name": "Ayşe Yılmaz", "phone": "0532 111 22 33", "address": "Atatürk Mah. 1. Sok. No 5 İzmit",
-            "payment": "cash", "fulfilment": "delivery", "note": ""}
+            "payment": "iban", "fulfilment": "delivery", "note": ""}
     body.update(kw)
     return client.post(f"{base}/api/order", data=json.dumps(body), content_type="application/json")
 
@@ -241,11 +241,11 @@ def test_custom_domain_and_isolation(app):
     # Kendi domaininde sipariş; başka işletmenin ürünü kabul edilmez
     r = c.post("/api/order", headers={"Host": "egezeytin.com"}, content_type="application/json",
                data=json.dumps({"items": [{"id": pb, "qty": 1}], "name": "X Y", "phone": "05321112233",
-                                "address": "uzun bir adres yazdım", "payment": "cash", "fulfilment": "delivery"}))
+                                "address": "uzun bir adres yazdım", "payment": "iban", "fulfilment": "delivery"}))
     assert r.status_code == 400
     r = c.post("/api/order", headers={"Host": "egezeytin.com"}, content_type="application/json",
                data=json.dumps({"items": [{"id": pa, "qty": 1}], "name": "X Y", "phone": "05321112233",
-                                "address": "uzun bir adres yazdım", "payment": "cash", "fulfilment": "delivery"}))
+                                "address": "uzun bir adres yazdım", "payment": "iban", "fulfilment": "delivery"}))
     assert r.status_code == 200 and r.get_json()["url"].startswith("/o/")
     a_order = r.get_json()
 
@@ -713,6 +713,7 @@ def test_broadcast(app):
 
 def test_card_payment_flow(app, monkeypatch):
     import paytr
+    monkeypatch.setenv("CARD_PAYMENTS", "1")
     c, biz, (p1, _, _), t = _owner(app, pay_cash=1)
     # Kart kapalıyken seçilemez
     assert order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}], payment="card").status_code == 400
@@ -849,3 +850,123 @@ def test_setup_steps_progress(app):
     c, biz, _, t = _owner(app, phone="5321112233")
     html = c.get("/panel/orders").get_data(as_text=True)
     assert "Kurulum · 3/5" in html            # ürün, ayar, kampanya tamam; bildirim ve ilk sipariş yok
+
+
+
+# ── Sadece IBAN + açıklama ──────────────────────────────────────────────────
+
+def test_payment_options_per_business(app):
+    c, biz, (p1, _, _), t = _owner(app)
+    base = {"csrf": t, "name": "Ege Zeytin", "delivery": "1", "delivery_fee": "50", "free_delivery_over": "0",
+            "min_order": "0", "ordering_open": "1", "iban": IBAN, "iban_holder": "Ali Veli"}
+    # Yalnız IBAN: seçim kutusu yok, bilgi kutusu var; nakit reddedilir
+    c.post("/panel/settings", data={**base, "pay_iban": "1"})
+    html = c.get("/s/ege-zeytin/").get_data(as_text=True)
+    assert 'name="payment" value="iban"' in html and 'value="cash"' not in html and "Ödeme: IBAN / havale" in html
+    assert order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}], payment="cash").status_code == 400
+    # IBAN + kapıda nakit + kapıda kart: üçü de görünür
+    c.post("/panel/settings", data={**base, "pay_iban": "1", "pay_cash": "1", "pay_pos": "1"})
+    html = c.get("/s/ege-zeytin/").get_data(as_text=True)
+    assert html.count('name="payment"') == 3 and "kapıda POS" in html
+    for m in ("iban", "cash", "pos"):
+        r = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}], payment=m, phone="0532111220" + str("icp".index(m[0]) if m[0] in "icp" else 0))
+        assert r.status_code == 200, (m, r.get_json())
+        assert core.get_order(r.get_json()["id"])["payment"] == m
+    # kapıda kart siparişinde "tamamı alındı" kart olarak kaydedilir
+    pos_id = db.one("SELECT id FROM orders WHERE payment = 'pos'")["id"]
+    c.post(f"/panel/orders/{pos_id}/payments", data={"csrf": t, "full": "1", "method": "pos"})
+    assert core.payments(pos_id)[0]["method"] == "card" and core.get_order(pos_id)["paid"] == 1
+    st = c.get(f"/s/ege-zeytin/o/{core.get_order(pos_id)['token']}").get_data(as_text=True)
+    assert "Ödemen alındı" in st
+    # Sadece kapıda nakit: IBAN'sız da sipariş alır
+    c.post("/panel/settings", data={**base, "pay_cash": "1", "iban": "", "iban_holder": ""})
+    html = c.get("/s/ege-zeytin/").get_data(as_text=True)
+    assert "Ödeme: Kapıda nakit" in html and 'value="iban"' not in html
+    r = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}], payment=None, phone="05445556677")
+    assert r.status_code == 200 and core.get_order(r.get_json()["id"])["payment"] == "cash"
+    # IBAN açık ama IBAN girilmemiş: uyarı + müşteriye görünmez
+    r = c.post("/panel/settings", data={**base, "pay_iban": "1", "pay_cash": "1", "iban": "", "iban_holder": ""}, follow_redirects=True)
+    assert "IBAN seçeneği müşterilere görünmez" in r.get_data(as_text=True)
+    assert 'value="iban"' not in c.get("/s/ege-zeytin/").get_data(as_text=True)
+    # hiçbir yöntem seçilmezse kaydedilmez
+    r = c.post("/panel/settings", data=base, follow_redirects=True)
+    assert "En az bir ödeme yöntemi seç" in r.get_data(as_text=True)
+    # online kart platformda kapalı: PayTR alanı görünmez, seçilemez
+    assert "PayTR" not in c.get("/panel/settings").get_data(as_text=True)
+    assert order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}], payment="card").status_code == 400
+
+
+def test_new_business_defaults_to_iban_only(app):
+    c = app.test_client()
+    biz = make_biz(c)
+    b = db.one("SELECT pay_iban, pay_cash, pay_pos FROM businesses WHERE id = ?", (biz["id"],))
+    assert (b["pay_iban"], b["pay_cash"], b["pay_pos"]) == (1, 0, 0)
+    c.post("/kayit", data={"name": "Bal Evi", "owner_name": "Mehmet Bal", "email": "bal@ornek.com",
+                           "phone": "05324445566", "password": "guclusifre1", "kvkk": "1"})
+    b = db.one("SELECT pay_iban, pay_cash, pay_pos FROM businesses WHERE slug = 'bal-evi'")
+    assert (b["pay_iban"], b["pay_cash"], b["pay_pos"]) == (1, 0, 0)
+
+
+def test_slogan_and_description(app):
+    c, biz, _, t = _owner(app)
+    about = "1985'ten beri kendi bahçelerimizden zeytin üretiyoruz.\nKatkısız, doğal salamura."
+    form = {"csrf": t, "name": "Ege Zeytin", "tagline": "Ayvalık'tan sofranıza", "about": about, "delivery": "1",
+            "delivery_fee": "50", "free_delivery_over": "0", "min_order": "0", "ordering_open": "1",
+            "iban": IBAN, "iban_holder": "Ali Veli", "pay_iban": "1"}
+    assert "Ayarlar kaydedildi." in c.post("/panel/settings", data=form, follow_redirects=True).get_data(as_text=True)
+    b = db.one("SELECT tagline, about FROM businesses WHERE id = ?", (biz["id"],))
+    assert b["tagline"] == "Ayvalık'tan sofranıza" and b["about"] == about.replace("\r", "")
+    html = c.get("/s/ege-zeytin/").get_data(as_text=True)
+    head = html.split('class="st-cats"')[0] if 'class="st-cats"' in html else html.split("st-list")[0]
+    assert "st-slogan" in head and "Ayvalık&#39;tan sofranıza" in head
+    assert "1985&#39;ten beri kendi bahçelerimizden" in head and "Devamını oku" in head
+    # uzunluk sınırı ve HTML kaçışı
+    form["about"] = "<script>alert(1)</script>" + "x" * 900
+    c.post("/panel/settings", data=form)
+    b = db.one("SELECT about FROM businesses WHERE id = ?", (biz["id"],))
+    assert len(b["about"]) == 800
+    assert "<script>alert(1)</script>" not in c.get("/s/ege-zeytin/").get_data(as_text=True)
+
+
+def test_flyer(app):
+    c, biz, (p1, p2, p3), t = _owner(app)
+    db.update("businesses", biz["id"], {"tagline": "Ayvalık'tan sofranıza", "about": "Kendi bahçemizden.",
+                                        "first_discount_active": 1, "first_discount_type": "percent",
+                                        "first_discount_value": "10", "instagram": "egezeytin"}); db.commit()
+    for size in ("a4", "a5", "a6"):
+        r = c.get(f"/panel/flyer?size={size}")
+        assert r.status_code == 200
+    html = c.get("/panel/flyer?size=a5").get_data(as_text=True)
+    assert html.count('class="fl"') == 2 and html.count('aria-label="QR kod"') == 2 and "cdn.jsdelivr" not in html
+    assert "Ayvalık&#39;tan sofranıza" in html and "Kendi bahçemizden." in html
+    assert "İlk siparişine %10 indirim" in html and "Her 3 siparişe 1 kg zeytin hediye" in html
+    assert "Siyah Zeytin" in html and "Tükenen" not in html and "@egezeytin" in html
+    assert c.get("/panel/flyer?size=a6").get_data(as_text=True).count('class="fl"') == 4
+    assert "Siyah Zeytin" not in c.get("/panel/flyer?urun=0").get_data(as_text=True)
+    assert "Broşür hazırla" in c.get("/panel/qr").get_data(as_text=True)
+    assert app.test_client().get("/panel/flyer").status_code == 302
+
+
+
+def test_qr_codes_decode(app):
+    """Üretilen QR'lar gerçekten okunuyor mu (OpenCV ile)."""
+    cv2 = pytest.importorskip("cv2")
+    import numpy as np
+    import qr
+    dets = [cv2.QRCodeDetector()] + ([cv2.QRCodeDetectorAruco()] if hasattr(cv2, "QRCodeDetectorAruco") else [])
+    for text in ["https://siparisqr-production.up.railway.app/s/ege-zeytin/", "https://egezeytin.com/",
+                 "https://siparisqr-production.up.railway.app/s/bal-evi-cicek-2/?ref=K7P2X" + "x" * 80]:
+        m = qr.matrix(text)
+        n = len(m) + 8
+        img = np.full((n, n), 255, np.uint8)
+        for y, row in enumerate(m):
+            for x, d in enumerate(row):
+                if d:
+                    img[y + 4, x + 4] = 0
+        img = cv2.resize(img, (n * 8, n * 8), interpolation=cv2.INTER_NEAREST)
+        assert any(d.detectAndDecode(img)[0] == text for d in dets), text
+    c, biz, _, t = _owner(app)
+    r = c.get("/panel/qr.svg")
+    assert r.status_code == 200 and r.mimetype == "image/svg+xml" and b"<path" in r.data
+    assert "cdn.jsdelivr" not in c.get("/panel/qr").get_data(as_text=True)
+    assert "cdn.jsdelivr" not in c.get("/panel/qr/print").get_data(as_text=True)

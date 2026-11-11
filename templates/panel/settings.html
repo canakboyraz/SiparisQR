@@ -13,7 +13,10 @@
   <section class="card">
     <h2>Mağaza</h2>
     <label class="fld"><span>İşletme adı</span><input name="name" value="{{ b.name }}" maxlength="80" required></label>
-    <label class="fld"><span>Kısa tanıtım</span><input name="tagline" value="{{ b.tagline }}" maxlength="160" placeholder="ör. Ayvalık'tan sofranıza, bu yılın hasadı"></label>
+    <label class="fld"><span>Slogan</span><input name="tagline" value="{{ b.tagline }}" maxlength="120" placeholder="ör. Ayvalık'tan sofranıza, bu yılın hasadı">
+      <small>Mağazanın en üstünde, adının altında görünür.</small></label>
+    <label class="fld"><span>İşletme açıklaması</span><textarea name="about" rows="4" maxlength="800" placeholder="ör. 1985'ten beri Ayvalık'ta kendi bahçelerimizden zeytin ve zeytinyağı üretiyoruz. Katkısız, doğal salamura; her hafta taze hasat.">{{ b.about }}</textarea>
+      <small>Müşteriler mağazanın üstünde okur: kim olduğunuzu, ürünlerinizi neyin farklı kıldığını anlatın. En fazla 800 karakter.</small></label>
     <div class="row2">
       <label class="fld"><span>Telefon</span><input name="phone" type="tel" value="{{ ('0' ~ b.phone) if b.phone and b.phone|length == 10 else b.phone }}" placeholder="05XX XXX XX XX"></label>
       <label class="fld"><span>WhatsApp</span><input name="whatsapp" type="tel" value="{{ ('0' ~ b.whatsapp) if b.whatsapp else '' }}" placeholder="05XX XXX XX XX"></label>
@@ -28,15 +31,19 @@
   </section>
 
   <section class="card">
-    <h2>Ödeme</h2>
-    <label class="check"><input type="checkbox" name="pay_cash" value="1" {% if b.pay_cash %}checked{% endif %}> Nakit (teslimde / teslim alırken)</label>
+    <h2>Ödeme yöntemleri</h2>
+    <p class="muted">Hangilerini açarsan müşteri sipariş verirken sadece onları görür.</p>
     <label class="check"><input type="checkbox" name="pay_iban" value="1" {% if b.pay_iban %}checked{% endif %}> IBAN ile havale / EFT</label>
+    <label class="check"><input type="checkbox" name="pay_cash" value="1" {% if b.pay_cash %}checked{% endif %}> Kapıda nakit</label>
+    <label class="check"><input type="checkbox" name="pay_pos" value="1" {% if b.pay_pos %}checked{% endif %}> Kapıda kart (POS cihazıyla)</label>
+    <h2 class="sub-h">IBAN bilgileri</h2>
     <label class="fld"><span>IBAN</span><input name="iban" value="{{ pretty_iban(b.iban) if b.iban else '' }}" placeholder="TR00 0000 0000 0000 0000 0000 00" autocomplete="off" spellcheck="false"></label>
     <div class="row2">
       <label class="fld"><span>Hesap sahibi</span><input name="iban_holder" value="{{ b.iban_holder }}" maxlength="80"></label>
       <label class="fld"><span>Banka</span><input name="iban_bank" value="{{ b.iban_bank }}" maxlength="60" placeholder="ör. Ziraat Bankası"></label>
     </div>
-    <small class="muted">Müşteri IBAN'ı seçerse sipariş sonrası ekranında bu bilgiler ve "açıklamaya Sipariş No yaz" uyarısı görünür.</small>
+    <small class="muted">IBAN açıksa, sipariş sonrası müşterinin ekranında bu bilgiler ve "açıklamaya Sipariş No yaz" uyarısı görünür.</small>
+    {% if card_enabled %}
     <details class="pay-add" {% if b.pay_card %}open{% endif %}>
       <summary>Kartla online ödeme (PayTR)</summary>
       <label class="check"><input type="checkbox" name="pay_card" value="1" {% if b.pay_card %}checked{% endif %}> Kartla ödeme açık</label>
@@ -48,6 +55,7 @@
       <label class="check"><input type="checkbox" name="paytr_test" value="1" {% if b.paytr_test %}checked{% endif %}> Test modu (gerçek para çekilmez)</label>
       <p class="muted"><small>PayTR Mağaza Paneli → Destek &amp; Kurulum → Entegrasyon Bilgileri'nden alınır. Aynı yerde <b>Bildirim URL</b>'ini şu adres yap: <code>{{ callback_url }}</code>. Anahtarlar şifreli saklanır. PayTR komisyonu işletmeye aittir.</small></p>
     </details>
+    {% endif %}
   </section>
 
   <section class="card">

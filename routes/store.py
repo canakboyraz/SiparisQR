@@ -43,7 +43,7 @@ def _store_page(biz):
         "freeOver": str(core.money(biz["free_delivery_over"])),
         "zones": [{"id": z["id"], "name": z["name"], "fee": str(core.money(z["fee"])), "freeOver": str(core.money(z["free_over"]))} for z in zs],
         "first": {"type": biz["first_discount_type"], "value": str(core.money(biz["first_discount_value"]))} if core.first_order_offer(biz) else None,
-        "open": bool(biz["ordering_open"]) and core.subscription_ok(biz),
+        "open": bool(biz["ordering_open"]) and core.subscription_ok(biz) and bool(core.payment_options(biz)),
     }
     return render_template("store.html", biz=biz, groups=groups, products=products, config=config,
                            reward=core.reward_rule(biz), first_offer=core.first_order_offer(biz), zones=zs,

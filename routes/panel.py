@@ -630,12 +630,14 @@ def settings():
         errors = []
         v = {
             "name": (f.get("name") or "").strip()[:80] or b["name"],
-            "tagline": (f.get("tagline") or "").strip()[:160],
+            "tagline": (f.get("tagline") or "").strip()[:120],
+            "about": (f.get("about") or "").strip()[:800],
             "phone": core.normalize_phone(f.get("phone")) or (f.get("phone") or "").strip()[:20],
             "whatsapp": core.normalize_phone(f.get("whatsapp")),
             "ordering_open": 1 if f.get("ordering_open") else 0,
             "closed_message": (f.get("closed_message") or "").strip()[:200],
             "pay_cash": 1 if f.get("pay_cash") else 0,
+            "pay_pos": 1 if f.get("pay_pos") else 0,
             "pay_iban": 1 if f.get("pay_iban") else 0,
             "iban": core.normalize_iban(f.get("iban")),
             "iban_holder": (f.get("iban_holder") or "").strip()[:80],
@@ -646,7 +648,7 @@ def settings():
             "pickup_address": (f.get("pickup_address") or "").strip()[:200],
         }
         v["instagram"] = (f.get("instagram") or "").strip().lstrip("@")[:60]
-        v["pay_card"] = 1 if f.get("pay_card") else 0
+        v["pay_card"] = 1 if (f.get("pay_card") and core.card_payments_enabled()) else 0
         v["paytr_test"] = 1 if f.get("paytr_test") else 0
         v["paytr_merchant_id"] = "".join(ch for ch in (f.get("paytr_merchant_id") or "") if ch.isdigit())[:20]
         import paytr as _paytr
@@ -663,14 +665,14 @@ def settings():
             except ValueError:
                 errors.append("Tutarları rakamla yaz (ör. 50 ya da 49,90).")
                 break
-        if not v["pay_cash"] and not v["pay_iban"] and not v["pay_card"]:
-            errors.append("En az bir ödeme yöntemi açık olmalı.")
         if v["pay_card"] and not (v["paytr_merchant_id"] and (v.get("paytr_key_enc") or b["paytr_key_enc"])
                                   and (v.get("paytr_salt_enc") or b["paytr_salt_enc"])):
             errors.append("Kartla ödeme için PayTR Mağaza No, Merchant Key ve Merchant Salt gerekli.")
-        if v["pay_iban"] and not core.valid_iban(v["iban"]):
+        if not (v["pay_cash"] or v["pay_pos"] or v["pay_iban"] or v["pay_card"]):
+            errors.append("En az bir ödeme yöntemi seç.")
+        if v["iban"] and not core.valid_iban(v["iban"]):
             errors.append("IBAN geçersiz görünüyor. TR ile başlayan 26 karakterlik IBAN'ı kontrol et.")
-        if v["pay_iban"] and not v["iban_holder"]:
+        if v["iban"] and not v["iban_holder"]:
             errors.append("IBAN'daki hesap sahibinin adını yaz.")
         if not v["delivery"] and not v["pickup"]:
             errors.append("Adrese teslim ya da gel al seçeneklerinden en az biri açık olmalı.")
@@ -687,14 +689,16 @@ def settings():
                     v["logo_id"] = None
                 db.update("businesses", g.biz["id"], v)
                 db.commit()
-                flash("Ayarlar kaydedildi.", "ok")
+                iban_missing = v["pay_iban"] and not v["iban"]
+                flash("Ayarlar kaydedildi." + (" IBAN'ı girmeden IBAN seçeneği müşterilere görünmez." if iban_missing else ""),
+                      "error" if iban_missing else "ok")
                 return redirect(url_for("panel.settings"))
             except ValueError as e:
                 db.rollback()
                 flash(str(e), "error")
     from app import public_base
     return render_template("panel/settings.html", active="settings", b=b, zones=core.zones(g.biz["id"]),
-                           callback_url=public_base() + "/paytr/callback")
+                           callback_url=public_base() + "/paytr/callback", card_enabled=core.card_payments_enabled())
 
 
 # ── QR ──────────────────────────────────────────────────────────────────────
@@ -704,6 +708,43 @@ def settings():
 def qr():
     return render_template("panel/qr.html", active="qr", store_url=public_store_url(g.biz),
                            rule=core.reward_rule(g.biz))
+
+
+@bp.get("/flyer")
+@login_required
+def flyer():
+    size = request.args.get("size", "a5")
+    if size not in ("a4", "a5", "a6"):
+        size = "a5"
+    show_products = request.args.get("urun", "1") == "1"
+    biz = db.one("SELECT * FROM businesses WHERE id = ?", (g.biz["id"],))
+    featured = []
+    if show_products:
+        groups = core.catalog(biz["id"])
+        allp = [p for _, items in groups for p in items]
+        vmap = core.variants_by_product([p["id"] for p in allp])
+        ok = [p for p in allp if core.product_available(p, vmap.get(p["id"]))]
+        ok.sort(key=lambda p: (0 if p["image_id"] else 1))
+        for p in ok[:4]:
+            vs = vmap.get(p["id"], [])
+            featured.append({"name": p["name"], "image_id": p["image_id"], "price": p["price"],
+                             "unit": " · ".join(v["name"] for v in vs) if vs else p["unit"], "from": len(vs) > 1})
+    offers = [x for x in (core.first_order_offer(biz), core.reward_rule(biz)) if x]
+    if biz["referral_active"] and biz["referral_text"]:
+        offers.append(f"Arkadaşını getir, ikinize de {biz['referral_text']}")
+    copies = {"a4": 1, "a5": 2, "a6": 4}[size]
+    return render_template("panel/flyer.html", b=biz, size=size, copies=copies, featured=featured,
+                           offers=offers[:2], store_url=public_store_url(biz), show_products=show_products,
+                           pay=[core.PAYMENT[k] for k in core.payment_options(biz)])
+
+
+@bp.get("/qr.svg")
+@login_required
+def qr_download():
+    import qr as _qr
+    resp = Response(_qr.svg(public_store_url(g.biz), border=4), mimetype="image/svg+xml")
+    resp.headers["Content-Disposition"] = f'attachment; filename="qr-{g.biz["slug"]}.svg"'
+    return resp
 
 
 @bp.get("/qr/print")

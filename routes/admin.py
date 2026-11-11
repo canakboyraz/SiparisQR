@@ -70,7 +70,7 @@ def new():
             try:
                 biz_id = db.insert("businesses", {"slug": form["slug"], "name": form["name"],
                                                   "custom_domain": form["domain"] or None, "active": 1,
-                                                  "plan": "trial", "paid_until": core.trial_until(),
+                                                  "plan": "trial", "paid_until": core.trial_until(), "pay_iban": 1, "pay_cash": 0,
                                                   "created_at": core.now()})
                 db.insert("users", {"business_id": biz_id, "email": form["email"], "name": form["owner_name"],
                                     "password_hash": generate_password_hash(password), "is_admin": 0,

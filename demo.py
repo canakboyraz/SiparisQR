@@ -34,6 +34,8 @@ def create_demo(slug="ege-zeytin", name="Ege Zeytin", owner_email="zeytin@ornek.
         return existing["id"]
     bid = db.insert("businesses", {"slug": slug, "name": name, "created_at": core.now(),
                                    "tagline": "Ayvalık'tan sofranıza, bu yılın hasadı", "accent": "#4B5D2A",
+                                   "about": "1985'ten beri Ayvalık'taki kendi bahçelerimizden zeytin ve zeytinyağı üretiyoruz. Zeytinlerimiz katkısız, doğal salamurada bekletilir; yağlarımız soğuk sıkımdır. Her hafta taze hasat, aynı gün kargo.",
+                                   "pay_cash": 0,
                                    "iban": "TR330006100519786457841326", "iban_holder": "Örnek İşletme", "iban_bank": "Örnek Banka",
                                    "delivery_fee": "60.00", "free_delivery_over": "1500.00", "reward_active": 1,
                                    "reward_every": 6, "reward_text": "1 kg zeytin", "phone": "5321112233",

@@ -55,8 +55,8 @@
     <p class="os-hint">{{ biz.name }} ödemeyi görünce işaretler. Sipariş onayı ödemeden bağımsızdır.</p>
   </section>
   <p class="os-paid" id="os-paid" {% if not order.paid %}hidden{% endif %}>✓ Ödemen alındı</p>
-  {% elif order.payment == 'cash' %}
-  <p class="os-note" id="os-cash">{% if order.paid %}✓ Ödemen alındı{% elif order.paid_cents %}{{ data.paid_amount }} alındı · kalan <b>{{ data.remaining }}</b>{% else %}Ödeme: <b>nakit, teslimde</b> · {{ tl(order.total) }}{% endif %}</p>
+  {% elif order.payment in ('cash', 'pos') %}
+  <p class="os-note" id="os-cash">{% if order.paid %}✓ Ödemen alındı{% elif order.paid_cents %}{{ data.paid_amount }} alındı · kalan <b>{{ data.remaining }}</b>{% else %}Ödeme: <b>{{ 'nakit' if order.payment == 'cash' else 'kartla' }}, teslimde</b> · {{ tl(order.total) }}{% endif %}</p>
   {% endif %}
 
   <section class="os-card os-loyal" id="os-loyal" {% if not data.card %}hidden{% endif %}>

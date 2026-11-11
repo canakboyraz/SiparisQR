@@ -3,14 +3,15 @@
 {% block content %}
 <h1>QR kod</h1>
 <section class="card qr-card">
-  <div class="qr" id="qr" data-url="{{ store_url }}" aria-label="Mağaza QR kodu"></div>
+  <div class="qr" id="qr">{{ qr_svg(store_url) }}</div>
   <div>
     <p>Müşterin bu kodu okutunca mağazan açılır.</p>
     <p class="qr-url"><a href="{{ store_url }}" target="_blank" rel="noopener">{{ store_url }}</a></p>
     <div class="act-row">
       <button class="btn-ghost" type="button" data-copy="{{ store_url }}">Linki kopyala</button>
-      <a class="btn-ghost" id="qr-dl" download="qr-{{ biz.slug }}.svg" href="#">QR'ı indir (SVG)</a>
-      <a class="btn-primary" href="{{ url_for('panel.qr_print') }}" target="_blank">Afiş yazdır</a>
+      <a class="btn-ghost" download="qr-{{ biz.slug }}.svg" href="{{ url_for('panel.qr_download') }}">QR'ı indir (SVG)</a>
+      <a class="btn-primary" href="{{ url_for('panel.flyer') }}" target="_blank">📰 Broşür hazırla</a>
+      <a class="btn-ghost" href="{{ url_for('panel.qr_print') }}" target="_blank">Masa / tezgâh kartı</a>
     </div>
   </div>
 </section>
@@ -35,19 +36,9 @@
     <a class="btn-wa btn-wa-sm" href="https://wa.me/?text={{ ('Artık online sipariş alıyoruz 🎉 ' ~ store_url)|urlencode }}" target="_blank" rel="noopener">WhatsApp'ta paylaş</a>
   </details>
   <details><summary>🖨️ Basılı malzemeler</summary>
-    <ol><li><a href="{{ url_for('panel.qr_print') }}" target="_blank">Afişi yazdır</a>; tezgâha, vitrine, kasaya koy.</li>
+    <ol><li><a href="{{ url_for('panel.flyer') }}" target="_blank">Broşürü hazırla</a>; evlere, apartman girişlerine, paketlerin içine dağıt.</li>
+      <li><a href="{{ url_for('panel.qr_print') }}" target="_blank">Masa / tezgâh kartını yazdır</a>; tezgâha, vitrine, kasaya koy.</li>
       <li>Paketlerin içine küçük kart (afişin 8'li baskısı) koy: "Bir dahakine buradan sipariş ver{% if rule %}, {{ rule|lower }}{% endif %}".</li></ol>
   </details>
 </section>
 {% endblock %}
-{% block pscripts %}<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
-<script>
-(function () {
-  var box = document.getElementById("qr");
-  if (!window.qrcode) { box.textContent = "QR yüklenemedi. İnternet bağlantını kontrol et."; return; }
-  var q = qrcode(0, "M"); q.addData(box.getAttribute("data-url")); q.make();
-  var svg = q.createSvgTag({ cellSize: 8, margin: 2, scalable: true });
-  box.innerHTML = svg;
-  document.getElementById("qr-dl").href = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
-})();
-</script>{% endblock %}

@@ -121,7 +121,7 @@ def signup():
         try:
             bid = db.insert("businesses", {"slug": slug, "name": form["name"][:80], "phone": phone, "whatsapp": phone,
                                            "active": 1, "plan": "trial", "paid_until": core.trial_until(),
-                                           "self_signup": 1, "pay_iban": 0, "created_at": core.now()})
+                                           "self_signup": 1, "pay_iban": 1, "pay_cash": 0, "created_at": core.now()})
             uid = db.insert("users", {"business_id": bid, "email": form["email"], "name": form["owner_name"][:80],
                                       "password_hash": generate_password_hash(password), "is_admin": 0,
                                       "created_at": core.now()})

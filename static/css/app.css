@@ -478,4 +478,13 @@ em.is-bad{font-style:normal;color:var(--bad);font-weight:700}
 .setup a::before{content:counter(s);display:grid;place-items:center;flex:none;width:26px;height:26px;border-radius:50%;background:#EEE;color:var(--ink-2);font-size:13px}
 .setup li.is-done a{color:var(--ink-3);text-decoration:line-through}
 .setup li.is-done a::before{content:"✓";background:var(--ok);color:#fff}
+.st-slogan{font-weight:600;color:color-mix(in srgb,var(--accent) 75%,#333)!important}
+.st-about{margin:14px 0 0}
+.st-about p{margin:0;color:var(--ink-2);font-size:15px;line-height:1.55;white-space:pre-line;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.st-about.is-open p{display:block;-webkit-line-clamp:unset}
+.st-more{border:0;background:none;padding:4px 0;color:var(--accent);font-weight:650;cursor:pointer;font-size:14.5px}
+.sub-h{font-size:15px;margin:16px 0 10px!important}
+.st-payinfo{display:flex;flex-direction:column;gap:2px;margin:0 0 14px;padding:12px 14px;border-radius:12px;background:var(--tint)}
+.st-payinfo b{color:var(--accent)}
+.st-payinfo small{color:var(--ink-2)}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}

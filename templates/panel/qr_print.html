@@ -18,23 +18,16 @@
 <body>
 <div class="bar"><span>{{ copies }} kart · kesip vitrine, pakete ya da tezgâha koy.</span>
   <span><a href="?n=2">2</a> · <a href="?n=4">4</a> · <a href="?n=6">6</a> <button onclick="window.print()">Yazdır</button></span></div>
+{% set qr = qr_svg(store_url) %}
 <div class="sheet">
   {% for i in range(copies) %}
   <div class="card">
     <div class="biz">{{ biz.name }}</div>
     <div class="how">Okut, seç, sipariş ver</div>
-    <div class="qr" data-url="{{ store_url }}"></div>
+    <div class="qr">{{ qr }}</div>
     {% if rule %}<div class="gift">🎁 {{ rule }}</div>{% endif %}
     <div class="sub">{{ store_url|replace('https://', '')|replace('http://', '') }}</div>
   </div>
   {% endfor %}
 </div>
-<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
-<script>
-document.querySelectorAll(".qr").forEach(function (box) {
-  if (!window.qrcode) { box.textContent = "QR yüklenemedi"; return; }
-  var q = qrcode(0, "M"); q.addData(box.getAttribute("data-url")); q.make();
-  box.innerHTML = q.createSvgTag({ cellSize: 6, margin: 1, scalable: true });
-});
-</script>
 </body></html>

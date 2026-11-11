@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS businesses (
   whatsapp TEXT NOT NULL DEFAULT '',
   ordering_open INTEGER NOT NULL DEFAULT 1,
   closed_message TEXT NOT NULL DEFAULT '',
-  pay_cash INTEGER NOT NULL DEFAULT 1,
+  pay_cash INTEGER NOT NULL DEFAULT 0,
   pay_iban INTEGER NOT NULL DEFAULT 1,
   iban TEXT NOT NULL DEFAULT '',
   iban_holder TEXT NOT NULL DEFAULT '',
@@ -244,6 +244,8 @@ MIGRATIONS = [
     ("businesses", "paytr_salt_enc", "TEXT NOT NULL DEFAULT ''"),
     ("businesses", "paytr_test", "INTEGER NOT NULL DEFAULT 1"),
     ("businesses", "instagram", "TEXT NOT NULL DEFAULT ''"),
+    ("businesses", "about", "TEXT NOT NULL DEFAULT ''"),
+    ("businesses", "pay_pos", "INTEGER NOT NULL DEFAULT 0"),
     # 4. aşama: abonelik
     ("businesses", "plan", "TEXT NOT NULL DEFAULT 'trial'"),
     ("businesses", "paid_until", "TEXT"),

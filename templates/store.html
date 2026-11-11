@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ biz.name }} · Sipariş ver{% endblock %}
 {% block head %}<meta name="theme-color" content="{{ biz.accent }}">
-<meta name="description" content="{{ biz.tagline or biz.name }} — online sipariş">
+<meta name="description" content="{{ (biz.tagline or biz.about or biz.name)|truncate(150) }} — online sipariş">
 <style>:root{--accent:{{ biz.accent }}}</style>{% endblock %}
 {% block body_class %}store{% endblock %}
 {% block body %}
@@ -12,9 +12,15 @@
       {% else %}<div class="st-logo st-logo-txt" aria-hidden="true">{{ biz.name[:1]|upper }}</div>{% endif %}
       <div>
         <h1>{{ biz.name }}</h1>
-        {% if biz.tagline %}<p>{{ biz.tagline }}</p>{% endif %}
+        {% if biz.tagline %}<p class="st-slogan">{{ biz.tagline }}</p>{% endif %}
       </div>
     </div>
+    {% if biz.about %}
+    <div class="st-about" id="st-about">
+      <p>{{ biz.about }}</p>
+      <button type="button" class="st-more" id="st-more" hidden>Devamını oku</button>
+    </div>
+    {% endif %}
     {% if reward %}
     <div class="st-reward" role="note">
       <span class="st-reward-ico" aria-hidden="true">🎁</span>
@@ -28,7 +34,7 @@
     {% if biz.referral_active and biz.referral_text %}
     <div class="st-ref" id="st-ref" hidden>👋 Arkadaşın seni davet etti! İlk siparişin onaylanınca ikinize de <b>{{ biz.referral_text }}</b>.</div>
     {% endif %}
-    {% if not sub_ok %}
+    {% if not sub_ok or not pay_options %}
     <p class="st-closed">Bu mağaza şu an sipariş almıyor.</p>
     {% elif not biz.ordering_open %}
     <p class="st-closed">{{ biz.closed_message or "Şu an sipariş alınmıyor. Ürünlere göz atabilirsin." }}</p>
@@ -60,9 +66,9 @@
           <div class="st-item-row">
             <b class="st-price">{% if p._variants|length > 1 %}<small>{{ tl(p.price) }}'den</small>{% else %}{{ tl(p.price) }}{% endif %}</b>
             {% if not p._ok %}<span class="st-out">Tükendi</span>
-            {% elif biz.ordering_open and sub_ok and p._variants %}
+            {% elif biz.ordering_open and sub_ok and pay_options and p._variants %}
             <button type="button" class="st-plus" data-open="{{ p.id }}" aria-label="{{ p.name }} seçenek seç">+</button>
-            {% elif biz.ordering_open and sub_ok %}
+            {% elif biz.ordering_open and sub_ok and pay_options %}
             <div class="st-add" data-add="{{ p.id }}">
               <button type="button" class="st-plus" data-act="add" aria-label="{{ p.name }} sepete ekle">+</button>
               <div class="st-qty" hidden><button type="button" data-act="dec" aria-label="Azalt">−</button><b>0</b><button type="button" data-act="inc" aria-label="Artır">+</button></div>
@@ -140,12 +146,16 @@
       <p class="st-pickup" id="st-pickup" {% if biz.delivery %}hidden{% endif %}>Teslim alma adresi: <b>{{ biz.pickup_address }}</b></p>
       {% endif %}
 
+      {% if pay_options|length > 1 %}
       <fieldset class="seg" id="st-pay">
         <legend>Ödeme</legend>
-        {% if biz.pay_cash %}<label><input type="radio" name="payment" value="cash" checked><span>Nakit<small>teslimde</small></span></label>{% endif %}
-        {% if biz.pay_iban %}<label><input type="radio" name="payment" value="iban" {% if pay_options[0] == 'iban' %}checked{% endif %}><span>IBAN<small>havale / EFT</small></span></label>{% endif %}
-        {% if 'card' in pay_options %}<label><input type="radio" name="payment" value="card" {% if pay_options[0] == 'card' %}checked{% endif %}><span>Kart<small>online öde</small></span></label>{% endif %}
+        {% for k in pay_options %}<label><input type="radio" name="payment" value="{{ k }}" {% if loop.first %}checked{% endif %}><span>{{ PAYMENT_SHORT[k][0] }}<small>{{ PAYMENT_SHORT[k][1] }}</small></span></label>{% endfor %}
       </fieldset>
+      {% elif pay_options %}
+      <input type="hidden" name="payment" value="{{ pay_options[0] }}">
+      <div class="st-payinfo"><b>Ödeme: {{ PAYMENT[pay_options[0]] }}</b>
+        <small>{% if pay_options[0] == 'iban' %}Hesap bilgileri siparişi gönderince gösterilir.{% elif pay_options[0] == 'cash' %}Ödemeyi teslimatta nakit yaparsın.{% elif pay_options[0] == 'pos' %}Ödemeyi teslimatta kartla yaparsın.{% else %}Siparişten sonra güvenli ödeme sayfası açılır.{% endif %}</small></div>
+      {% endif %}
       <label class="fld"><span>Not <small>(isteğe bağlı)</small></span><textarea name="note" rows="2" maxlength="400" placeholder="ör. Zile basmayın, arayın"></textarea></label>
 
       {% if biz.birthday_active and biz.birthday_text %}

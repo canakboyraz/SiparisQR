@@ -36,7 +36,9 @@ TRANSITIONS = {
     "rejected": set(),
     "cancelled": set(),
 }
-PAYMENT = {"cash": "Nakit (teslimde)", "iban": "IBAN / havale", "card": "Kartla online"}
+PAYMENT = {"iban": "IBAN / havale", "cash": "Kapıda nakit", "pos": "Kapıda kart", "card": "Kartla online"}
+PAYMENT_SHORT = {"iban": ("IBAN", "havale / EFT"), "cash": ("Nakit", "kapıda"), "pos": ("Kart", "kapıda POS"),
+                 "card": ("Kart", "online öde")}
 FULFILMENT = {"delivery": "Adrese teslim", "pickup": "Gel al"}
 
 
@@ -291,9 +293,27 @@ def card_ready(biz):
     return bool(biz["pay_card"] and biz["paytr_merchant_id"] and biz["paytr_key_enc"] and biz["paytr_salt_enc"])
 
 
+def card_payments_enabled():
+    """Kartla ödeme platform genelinde kapalı; CARD_PAYMENTS=1 ile açılır."""
+    import os
+    return os.environ.get("CARD_PAYMENTS", "0") == "1"
+
+
+def iban_ready(biz):
+    return bool(valid_iban(biz["iban"]) and (biz["iban_holder"] or "").strip())
+
+
 def payment_options(biz):
-    opts = [k for k in ("cash", "iban") if biz["pay_" + k]]
-    if card_ready(biz):
+    """İşletmenin açtığı ödeme yöntemleri: IBAN (bilgileri tamamsa), kapıda nakit, kapıda kart.
+    Online kart (PayTR) yalnızca platformda CARD_PAYMENTS=1 ise."""
+    opts = []
+    if biz["pay_iban"] and iban_ready(biz):
+        opts.append("iban")
+    if biz["pay_cash"]:
+        opts.append("cash")
+    if biz.get("pay_pos"):
+        opts.append("pos")
+    if card_payments_enabled() and card_ready(biz):
         opts.append("card")
     return opts
 
@@ -312,9 +332,12 @@ def create_order(biz, data):
     if not phone:
         raise OrderError("Telefon numaranı 05XX XXX XX XX şeklinde yaz.")
 
-    payment = data.get("payment")
-    if payment not in payment_options(biz):
-        raise OrderError("Bir ödeme yöntemi seç.")
+    options = payment_options(biz)
+    if not options:
+        raise OrderError("Bu mağaza ödeme bilgilerini henüz tamamlamadı, şu an sipariş alınamıyor.")
+    payment = data.get("payment") or options[0]
+    if payment not in options:
+        raise OrderError("Bu ödeme yöntemi bu mağazada kullanılamıyor. Bir ödeme yöntemi seç.")
     fulfilment = data.get("fulfilment")
     allowed_ful = [k for k in FULFILMENT if biz[k]]
     if fulfilment not in allowed_ful:
@@ -630,6 +653,7 @@ def add_payment(biz_id, order, amount, method, note="", user_id=None):
         raise OrderError("Tutar 0'dan büyük olmalı.")
     if c > cents(order["total"]) * 10 + 1_000_000:
         raise OrderError("Tutar çok yüksek görünüyor, kontrol et.")
+    method = {"pos": "card"}.get(method, method)
     if method not in PAY_METHODS:
         raise OrderError("Ödeme yöntemini seç.")
     try:
@@ -790,12 +814,12 @@ def setup_steps(biz):
     n_products = db.one("SELECT COUNT(*) AS n FROM products WHERE business_id = ?", (biz["id"],))["n"]
     n_push = db.one("SELECT COUNT(*) AS n FROM push_subscriptions WHERE business_id = ?", (biz["id"],))["n"]
     n_orders = db.one("SELECT COUNT(*) AS n FROM orders WHERE business_id = ?", (biz["id"],))["n"]
-    pay_ok = (biz["pay_iban"] and biz["iban"]) or biz["pay_cash"] or card_ready(biz)
+    pay_ok = bool(payment_options(biz))
     camp = biz["reward_active"] or biz["first_discount_active"] or biz["referral_active"] or biz["birthday_active"]
     return [
         ("İlk ürününü ekle", int(n_products) > 0, "/panel/products/new"),
-        ("IBAN, telefon ve teslimat ayarları", bool(pay_ok and (biz["phone"] or biz["whatsapp"])), "/panel/settings"),
+        ("Ödeme, açıklama ve teslimat ayarları", bool(pay_ok and (biz["phone"] or biz["whatsapp"])), "/panel/settings"),
         ("Bir kampanya aç (ör. her 6 siparişe hediye)", bool(camp), "/panel/campaign"),
         ("Telefonunda bildirimleri aç", int(n_push) > 0, "/panel/notifications"),
-        ("QR afişini yazdır, linki Instagram'a ekle", int(n_orders) > 0, "/panel/qr"),
+        ("Broşürünü yazdır, linki Instagram'a ekle", int(n_orders) > 0, "/panel/qr"),
     ]

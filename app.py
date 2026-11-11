@@ -208,11 +208,18 @@ def create_app(test_config=None):
             resp.headers.setdefault("Cache-Control", "no-store")
         return resp
 
+    import qr as _qr
+    from markupsafe import Markup
+
+    @app.template_global()
+    def qr_svg(text):
+        return Markup(_qr.svg(text))
+
     @app.context_processor
     def inject():
         return {"csrf_token": csrf_token, "tl": core.tl, "local_time": core.local_time,
                 "pretty_phone": core.pretty_phone, "pretty_iban": core.pretty_iban,
-                "STATUS": core.STATUS, "PAYMENT": core.PAYMENT, "FULFILMENT": core.FULFILMENT,
+                "STATUS": core.STATUS, "PAYMENT": core.PAYMENT, "PAYMENT_SHORT": core.PAYMENT_SHORT, "FULFILMENT": core.FULFILMENT,
                 "platform_name": platform_name(), "current_user": current_user}
 
     @app.errorhandler(400)
