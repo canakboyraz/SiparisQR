@@ -46,7 +46,7 @@
   {% if order.payment == 'iban' and order.status not in ('rejected', 'cancelled') %}
   <section class="os-card os-iban" id="os-iban" {% if order.paid %}hidden{% endif %}>
     <h2>Ödeme bilgileri</h2>
-    <p id="os-iban-text">{% if order.paid_cents %}<b>{{ data.paid_amount }}</b> ödemen alındı. Kalan <b>{{ data.remaining }}</b> tutarı{% else %}Toplam <b>{{ tl(order.total) }}</b> tutarı{% endif %} aşağıdaki hesaba gönder. Açıklamaya <b>Sipariş {{ order.id }}</b> yaz.</p>
+    <p id="os-iban-text">{% if order.paid_cents %}<b>{{ data.paid_amount }}</b> ödemen alındı, teşekkürler. Kalan <b>{{ data.remaining }}</b> tutarını{% else %}Toplam <b>{{ tl(order.total) }}</b> tutarını{% endif %} aşağıdaki hesaba gönderebilirsin. Açıklamaya <b>Sipariş {{ order.id }}</b> yazmayı unutma lütfen.</p>
     <div class="iban-box">
       <small>{{ biz.iban_bank }}{% if biz.iban_bank %} · {% endif %}{{ biz.iban_holder }}</small>
       <code id="iban">{{ pretty_iban(biz.iban) }}</code>

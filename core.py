@@ -358,24 +358,24 @@ def create_order(biz, data):
         raise OrderError("Bu mağaza şu an sipariş almıyor.")
     name = " ".join(str(data.get("name") or "").split())[:80]
     if len(name) < 2:
-        raise OrderError("Adını ve soyadını yaz.")
+        raise OrderError("Ad ve soyad eksik görünüyor, kontrol eder misin?")
     phone = normalize_phone(data.get("phone"))
     if not phone:
-        raise OrderError("Telefon numaranı 05XX XXX XX XX şeklinde yaz.")
+        raise OrderError("Telefon numarası hatalı görünüyor. 05XX XXX XX XX şeklinde kontrol eder misin?")
 
     options = payment_options(biz)
     if not options:
-        raise OrderError("Bu mağaza ödeme bilgilerini henüz tamamlamadı, şu an sipariş alınamıyor.")
+        raise OrderError("Üzgünüz, bu mağaza şu an sipariş alamıyor. Daha sonra tekrar dener misin?")
     payment = data.get("payment") or options[0]
     if payment not in options:
-        raise OrderError("Bu ödeme yöntemi bu mağazada kullanılamıyor. Bir ödeme yöntemi seç.")
+        raise OrderError("Seçilen ödeme yöntemi bu mağazada kullanılamıyor. Listeden bir ödeme yöntemi seçer misin?")
     fulfilment = data.get("fulfilment")
     allowed_ful = [k for k in FULFILMENT if biz[k]]
     if fulfilment not in allowed_ful:
-        raise OrderError("Teslimat şeklini seç.")
+        raise OrderError("Teslimat şekli seçilmemiş görünüyor, seçer misin?")
     address = str(data.get("address") or "").strip()[:400]
     if fulfilment == "delivery" and len(address) < 10:
-        raise OrderError("Teslimat adresini açık yaz (mahalle, sokak, no).")
+        raise OrderError("Adres eksik ya da hatalı girilmiş olabilir. Mahalle, sokak ve kapı numarasını kontrol eder misin?")
     zone = None
     if fulfilment == "delivery":
         zs = zones(biz["id"])
@@ -386,23 +386,23 @@ def create_order(biz, data):
                 zid = 0
             zone = next((z for z in zs if z["id"] == zid), None)
             if not zone:
-                raise OrderError("Teslimat bölgeni seç.")
+                raise OrderError("Teslimat bölgesi seçilmemiş görünüyor, seçer misin?")
     note = str(data.get("note") or "").strip()[:400]
 
     items = data.get("items") or []
     if not isinstance(items, list) or not items:
-        raise OrderError("Sepetin boş.")
+        raise OrderError("Sepetin şu an boş görünüyor.")
     if len(items) > MAX_LINES:
-        raise OrderError("Sepette çok fazla kalem var.")
+        raise OrderError("Sepette çok fazla ürün çeşidi var, biraz azaltabilir misin?")
     wanted = {}
     for it in items:
         try:
             pid, qty = int(it.get("id")), int(it.get("qty"))
             vid = int(it["variant"]) if it.get("variant") not in (None, "", 0, "0") else None
         except (TypeError, ValueError, AttributeError):
-            raise OrderError("Sepet okunamadı, sayfayı yenileyip tekrar dene.") from None
+            raise OrderError("Sepet okunamadı. Sayfayı yenileyip tekrar dener misin?") from None
         if qty < 1 or qty > MAX_QTY:
-            raise OrderError(f"Bir üründen en fazla {MAX_QTY} adet sipariş verilebilir.")
+            raise OrderError(f"Üzgünüz, bir üründen en fazla {MAX_QTY} adet sipariş verilebiliyor.")
         wanted[(pid, vid)] = wanted.get((pid, vid), 0) + qty
 
     pids = sorted({k[0] for k in wanted})
@@ -414,22 +414,22 @@ def create_order(biz, data):
     for (pid, vid), qty in wanted.items():
         p = prods.get(pid)
         if not p or not p["visible"]:
-            raise OrderError("Sepetindeki bir ürün artık satışta değil. Sayfayı yenile.")
+            raise OrderError("Sepetindeki bir ürün artık satışta değil. Sayfayı yenileyip sepetini kontrol eder misin?")
         if not p["available"]:
-            raise OrderError(f"{p['name']} şu an tükendi, sepetten çıkar.")
+            raise OrderError(f"Üzgünüz, {p['name']} şu an tükendi. Sepetinden çıkarıp devam edebilir misin?")
         vs = vmap.get(pid, [])
         if vs:
             v = next((x for x in vs if x["id"] == vid), None)
             if not v:
-                raise OrderError(f"{p['name']} için bir seçenek seç (sayfayı yenile).")
+                raise OrderError(f"{p['name']} için seçenek seçilmemiş görünüyor. Sayfayı yenileyip bir seçenek seçer misin?")
             price, unit, stock = money(v["price"]), v["name"], v["stock"]
         else:
             if vid:
-                raise OrderError("Sepet okunamadı, sayfayı yenileyip tekrar dene.")
+                raise OrderError("Sepet okunamadı. Sayfayı yenileyip tekrar dener misin?")
             v, price, unit, stock = None, money(p["price"]), p["unit"], p["stock"]
         label = f"{p['name']} ({unit})" if v else p["name"]
         if stock is not None and int(stock) < qty:
-            raise OrderError(f"{label} için stokta {int(stock)} adet kaldı." if int(stock) > 0 else f"{label} tükendi.")
+            raise OrderError(f"Üzgünüz, {label} için stokta {int(stock)} adet kaldı. Adedi azaltabilir misin?" if int(stock) > 0 else f"Üzgünüz, {label} tükendi.")
         lt = (price * qty).quantize(Decimal("0.01"))
         subtotal += lt
         lines.append({"product_id": pid, "variant_id": v["id"] if v else None, "name": p["name"], "unit": unit,
@@ -437,7 +437,7 @@ def create_order(biz, data):
 
     min_order = money(biz["min_order"])
     if min_order > 0 and subtotal < min_order:
-        raise OrderError(f"En az sipariş tutarı {tl(min_order)}. Sepetine {tl(min_order - subtotal)} daha ekle.")
+        raise OrderError(f"En az sipariş tutarı {tl(min_order)}. Sepetine {tl(min_order - subtotal)} değerinde ürün daha ekleyebilir misin?")
 
     is_first = prior_orders(biz["id"], phone) == 0
     discount, discount_note = Decimal("0.00"), ""
@@ -474,7 +474,7 @@ def create_order(biz, data):
             table, rid = ("product_variants", ln["variant_id"]) if ln["variant_id"] else ("products", ln["product_id"])
             if db.execute_rc(f"UPDATE {table} SET stock = stock - ? WHERE id = ? AND stock >= ?",
                              (ln["qty"], rid, ln["qty"])) != 1:
-                raise OrderError(f"{ln['name']} stoğu az önce tükendi. Sepetini güncelle.")
+                raise OrderError(f"Üzgünüz, {ln['name']} az önce tükendi. Sepetini güncelleyip tekrar dener misin?")
         ts = now()
         order_id = db.insert("orders", {
             "business_id": biz["id"], "customer_id": cust_id, "token": secrets.token_urlsafe(16),
@@ -577,7 +577,7 @@ def set_status(biz, order, new_status, reason="", message=None):
     """Durum değişikliği + ödül hesabı. Döner: (order, kazanılan_ödüller listesi)."""
     cur = order["status"]
     if new_status not in TRANSITIONS.get(cur, set()):
-        raise OrderError(f"Bu sipariş '{STATUS[cur]}' durumunda; '{STATUS.get(new_status, new_status)}' yapılamaz.")
+        raise OrderError(f"Bu sipariş '{STATUS[cur]}' durumunda olduğu için '{STATUS.get(new_status, new_status)}' yapılamıyor.")
     changes = {"status": new_status, "updated_at": now()}
     if message is not None:
         changes["owner_message"] = message.strip()[:300]
@@ -683,14 +683,14 @@ def add_payment(biz_id, order, amount, method, note="", user_id=None):
     try:
         c = cents(amount)
     except ValueError:
-        raise OrderError("Tutarı rakamla yaz (ör. 500 ya da 499,90).") from None
+        raise OrderError("Tutar anlaşılamadı. Rakamla yazar mısın? (ör. 500 ya da 499,90)") from None
     if c <= 0:
-        raise OrderError("Tutar 0'dan büyük olmalı.")
+        raise OrderError("Tutar 0'dan büyük olmalı, kontrol eder misin?")
     if c > cents(order["total"]) * 10 + 1_000_000:
-        raise OrderError("Tutar çok yüksek görünüyor, kontrol et.")
+        raise OrderError("Tutar çok yüksek görünüyor, kontrol eder misin?")
     method = {"pos": "card"}.get(method, method)
     if method not in PAY_METHODS:
-        raise OrderError("Ödeme yöntemini seç.")
+        raise OrderError("Ödeme yöntemi seçilmemiş görünüyor, seçer misin?")
     try:
         db.insert("payments", {"business_id": biz_id, "order_id": order["id"], "amount_cents": c, "method": method,
                                "note": (note or "").strip()[:200], "created_by": user_id, "created_at": now()})

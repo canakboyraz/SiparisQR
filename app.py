@@ -193,7 +193,7 @@ def create_app(test_config=None):
         if request.method == "POST" and request.path.startswith(("/panel", "/admin", "/login", "/logout")):
             sent = request.form.get("csrf") or request.headers.get("X-CSRF-Token")
             if not sent or sent != session.get("csrf"):
-                abort(400, "Oturum süresi doldu, sayfayı yenileyip tekrar dene.")
+                abort(400, "Oturum süresi dolmuş. Sayfayı yenileyip tekrar dener misin?")
 
     @app.teardown_appcontext
     def _end(exc):

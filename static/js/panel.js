@@ -55,7 +55,7 @@
         return;
       }
       if (Notification.permission === "denied") {
-        say("Bildirim izni engellenmiş. Tarayıcı ayarlarından bu site için bildirimlere izin ver, sonra sayfayı yenile.");
+        say("Bildirim izni engellenmiş görünüyor. Tarayıcı ayarlarından bu siteye bildirim izni verip sayfayı yeniler misin?");
         return;
       }
       registration().then(function (reg) { return reg.pushManager.getSubscription(); }).then(function (sub) {

@@ -16,14 +16,14 @@ RESERVED = {"admin", "panel", "login", "logout", "api", "static", "img", "s", "o
 def _validate(name, slug, domain, biz_id=None):
     errors = []
     if len(name) < 2:
-        errors.append("İşletme adını yaz.")
+        errors.append("İşletme adı eksik görünüyor.")
     if not core.SLUG_RE.match(slug) or slug in RESERVED:
-        errors.append("Kısa ad 3-40 karakter, küçük harf, rakam ve tire olmalı (ör. ege-zeytin).")
+        errors.append("Kısa ad 3-40 karakter olmalı ve yalnızca küçük harf, rakam ve tire içermeli (ör. ege-zeytin).")
     elif db.one("SELECT id FROM businesses WHERE slug = ? AND id <> ?", (slug, biz_id or 0)):
         errors.append("Bu kısa ad başka işletmede kullanılıyor.")
     if domain:
         if not core.valid_domain(domain):
-            errors.append("Domain geçersiz (ör. egezeytin.com).")
+            errors.append("Domain hatalı görünüyor, kontrol eder misin? (ör. egezeytin.com)")
         elif domain in platform_hosts():
             errors.append("Platformun kendi domaini bir işletmeye bağlanamaz.")
         elif db.one("SELECT id FROM businesses WHERE custom_domain = ? AND id <> ?", (domain, biz_id or 0)):
@@ -59,7 +59,7 @@ def new():
                 "email": (f.get("email") or "").strip().lower()}
         errors = _validate(form["name"], form["slug"], form["domain"])
         if "@" not in form["email"] or "." not in form["email"].split("@")[-1]:
-            errors.append("İşletme sahibinin e-postasını yaz.")
+            errors.append("İşletme sahibinin e-postası eksik ya da hatalı görünüyor.")
         elif db.one("SELECT id FROM users WHERE email = ?", (form["email"],)):
             errors.append("Bu e-postayla zaten bir hesap var.")
         if errors:
@@ -132,7 +132,7 @@ def edit(biz_id):
                     db.commit()
                     flash("Bitiş tarihi güncellendi.", "ok")
                 except ValueError:
-                    flash("Tarihi seç.", "error")
+                    flash("Tarih seçilmemiş görünüyor.", "error")
             return redirect(url_for("admin.edit", biz_id=biz_id) + "#abonelik")
         elif action == "reset" and owner:
             new_password = secrets.token_urlsafe(7)
@@ -170,11 +170,11 @@ def platform():
             for k in ("price_monthly", "price_yearly"):
                 values[k] = str(core.money(values[k] or "0")).replace(".00", "")
         except ValueError:
-            flash("Gün ve fiyatları rakamla yaz.", "error")
+            flash("Gün ve fiyatlar anlaşılamadı, rakamla yazar mısın?", "error")
             return redirect(url_for("admin.platform"))
         values["pay_iban"] = core.normalize_iban(values["pay_iban"])
         if values["pay_iban"] and not core.valid_iban(values["pay_iban"]):
-            flash("IBAN geçersiz görünüyor.", "error")
+            flash("IBAN hatalı görünüyor, kontrol eder misin?", "error")
             return redirect(url_for("admin.platform"))
         values["contact_whatsapp"] = core.normalize_phone(values["contact_whatsapp"])
         core.save_platform_settings(values)
@@ -193,5 +193,5 @@ def make_demo():
         return redirect(url_for("admin.edit", biz_id=existing["id"]))
     slug = "ornek-magaza" if not db.one("SELECT id FROM businesses WHERE slug = 'ornek-magaza'") else "ornek-magaza-2"
     bid = demo.create_demo(slug=slug, name="Ege Zeytin (Örnek)", owner_email=None, is_demo=1)
-    flash("Demo mağaza hazır. Satış görüşmesinde bu linki aç.", "ok")
+    flash("Demo mağaza hazır. Satış görüşmesinde bu linki açabilirsin.", "ok")
     return redirect(url_for("admin.edit", biz_id=bid))

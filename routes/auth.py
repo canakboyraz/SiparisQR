@@ -22,14 +22,14 @@ def login():
         password = request.form.get("password") or ""
         ip = request.remote_addr or "?"
         if rate_limited(f"login:{ip}", 10, 600) or rate_limited(f"login:{email}", 8, 600):
-            flash("Çok fazla deneme yapıldı. 10 dakika sonra tekrar dene.", "error")
+            flash("Çok fazla deneme yapıldı. Güvenliğin için 10 dakika sonra tekrar dener misin?", "error")
             return render_template("login.html", email=email), 429
         u = db.one("SELECT * FROM users WHERE email = ?", (email,))
         if u and check_password_hash(u["password_hash"], password):
             if u["business_id"]:
                 biz = db.one("SELECT active FROM businesses WHERE id = ?", (u["business_id"],))
                 if not biz or not biz["active"]:
-                    flash("Bu işletmenin hesabı kapalı. Platform yöneticisiyle görüş.", "error")
+                    flash("Bu işletmenin hesabı şu an kapalı. Platform yöneticisiyle iletişime geçebilirsin.", "error")
                     return render_template("login.html", email=email), 403
             session.clear()
             session.permanent = True
@@ -38,7 +38,7 @@ def login():
             if not dest:
                 dest = url_for("panel.orders") if u["business_id"] else url_for("admin.index")
             return redirect(dest)
-        flash("E-posta ya da şifre hatalı.", "error")
+        flash("E-posta ya da şifre hatalı görünüyor, kontrol eder misin?", "error")
         return render_template("login.html", email=email), 401
     if current_user():
         return redirect(url_for("panel.orders") if current_user()["business_id"] else url_for("admin.index"))
@@ -58,11 +58,11 @@ def password():
         u = current_user()
         old, new, again = (request.form.get(k) or "" for k in ("old", "new", "again"))
         if not check_password_hash(u["password_hash"], old):
-            flash("Mevcut şifre hatalı.", "error")
+            flash("Mevcut şifre hatalı görünüyor, kontrol eder misin?", "error")
         elif len(new) < 8:
             flash("Yeni şifre en az 8 karakter olmalı.", "error")
         elif new != again:
-            flash("Yeni şifreler aynı değil.", "error")
+            flash("Yeni şifreler birbiriyle aynı değil, kontrol eder misin?", "error")
         else:
             db.update("users", u["id"], {"password_hash": generate_password_hash(new)})
             db.commit()
@@ -90,22 +90,22 @@ def signup():
         if f.get("website"):                       # bot tuzağı
             abort(400)
         if rate_limited(f"signup:{request.remote_addr}", 4, 3600):
-            errors.append("Çok fazla kayıt denemesi. Bir saat sonra tekrar dene.")
+            errors.append("Çok fazla kayıt denemesi yapıldı. Bir saat sonra tekrar dener misin?")
         if len(form["name"]) < 2:
-            errors.append("İşletme adını yaz.")
+            errors.append("İşletme adı eksik görünüyor.")
         if len(form["owner_name"]) < 2:
-            errors.append("Adını ve soyadını yaz.")
+            errors.append("Ad ve soyad eksik görünüyor.")
         if "@" not in form["email"] or "." not in form["email"].split("@")[-1]:
-            errors.append("Geçerli bir e-posta yaz.")
+            errors.append("E-posta adresi hatalı görünüyor, kontrol eder misin?")
         elif db.one("SELECT id FROM users WHERE email = ?", (form["email"],)):
-            errors.append("Bu e-postayla zaten hesap var. Giriş yap ya da şifreni yöneticiden iste.")
+            errors.append("Bu e-postayla zaten bir hesap var. Giriş yapabilir ya da şifreni yöneticiden isteyebilirsin.")
         phone = core.normalize_phone(form["phone"])
         if not phone:
-            errors.append("Cep telefonunu 05XX XXX XX XX şeklinde yaz.")
+            errors.append("Telefon numarası hatalı görünüyor. 05XX XXX XX XX şeklinde kontrol eder misin?")
         if len(password) < 8:
             errors.append("Şifre en az 8 karakter olmalı.")
         if not f.get("kvkk"):
-            errors.append("Kullanım koşullarını onayla.")
+            errors.append("Devam edebilmek için kullanım koşullarını onaylaman gerekiyor.")
         if errors:
             for e in errors:
                 flash(e, "error")

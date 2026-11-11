@@ -165,7 +165,7 @@ def test_full_flow_with_reward(app):
 
     # Onaysız bekleyen sipariş geçersiz geçişe izin vermez
     r = c.post(f"/panel/orders/{o['id']}/status", data={"csrf": t, "status": "rejected"}, follow_redirects=True)
-    assert "yapılamaz" in r.get_data(as_text=True)
+    assert "yapılamıyor" in r.get_data(as_text=True)
 
     # 2. ve 3. onay -> 3. onayda ödül
     c.post(f"/panel/orders/{o2['id']}/status", data={"csrf": t, "status": "approved"})
@@ -313,7 +313,7 @@ def test_panel_pages_render_and_settings(app):
     t = csrf(c, "/panel/settings")
     form = {"csrf": t, "name": "Ege Zeytin", "pay_cash": "1", "pay_iban": "1", "iban": "TR12 3456", "iban_holder": "A",
             "delivery": "1", "delivery_fee": "40", "free_delivery_over": "0", "min_order": "0", "ordering_open": "1"}
-    assert "IBAN geçersiz" in c.post("/panel/settings", data=form, follow_redirects=True).get_data(as_text=True)
+    assert "IBAN hatalı görünüyor" in c.post("/panel/settings", data=form, follow_redirects=True).get_data(as_text=True)
     form["iban"] = "TR33 0006 1005 1978 6457 8413 26"
     assert "Ayarlar kaydedildi" in c.post("/panel/settings", data=form, follow_redirects=True).get_data(as_text=True)
     b = db.one("SELECT * FROM businesses WHERE id = ?", (biz["id"],))
@@ -570,7 +570,7 @@ def test_shipping_zones(app):
     assert "Kocaeli içi" in c.get("/s/ege-zeytin/").get_data(as_text=True)
     c2 = app.test_client()
     r = order(c2, "/s/ege-zeytin", [{"id": p1, "qty": 1}])
-    assert r.status_code == 400 and "bölgeni" in r.get_json()["error"]
+    assert r.status_code == 400 and "bölgesi seçilmemiş" in r.get_json()["error"]
     o = core.get_order(order(c2, "/s/ege-zeytin", [{"id": p1, "qty": 1}], zone=zs[0]["id"]).get_json()["id"])
     assert o["delivery_fee"] == "40.00" and o["zone_name"] == "Kocaeli içi"
     o = core.get_order(order(c2, "/s/ege-zeytin", [{"id": p1, "qty": 2}], zone=zs[0]["id"]).get_json()["id"])
@@ -890,7 +890,7 @@ def test_payment_options_per_business(app):
     assert 'value="iban"' not in c.get("/s/ege-zeytin/").get_data(as_text=True)
     # hiçbir yöntem seçilmezse kaydedilmez
     r = c.post("/panel/settings", data=base, follow_redirects=True)
-    assert "En az bir ödeme yöntemi seç" in r.get_data(as_text=True)
+    assert "En az bir ödeme yöntemi açık olmalı" in r.get_data(as_text=True)
     # online kart platformda kapalı: PayTR alanı görünmez, seçilemez
     assert "PayTR" not in c.get("/panel/settings").get_data(as_text=True)
     assert order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}], payment="card").status_code == 400
@@ -1040,3 +1040,13 @@ def test_stamp_mode_order_default_and_legacy(app):
     c.post(f"/panel/orders/{r['id']}/status", data={"csrf": t, "status": "approved"})
     assert core.get_order(r["id"])["counts_for_reward"] == 0
     assert "Her 6 siparişe 1 kg zeytin hediye (400 TL ve üzeri siparişler sayılır)" in c.get("/s/ege-zeytin/").get_data(as_text=True)
+
+
+def test_polite_customer_errors(app):
+    c, biz, (p1, _, _), t = _owner(app)
+    e = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}], address="kısa").get_json()["error"]
+    assert e.startswith("Adres eksik ya da hatalı girilmiş olabilir") and e.endswith("kontrol eder misin?")
+    e = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}], phone="123").get_json()["error"]
+    assert "hatalı görünüyor" in e
+    e = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}], name="").get_json()["error"]
+    assert "eksik görünüyor" in e

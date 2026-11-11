@@ -14,7 +14,7 @@ bp = Blueprint("store", __name__)
 def _biz(slug=None):
     biz = core.business_by_slug(slug) if slug else g.host_biz
     if not biz:
-        abort(404, "Mağaza bulunamadı.")
+        abort(404, "Aradığın mağaza bulunamadı. Linki kontrol eder misin?")
     g.base = store_base(biz)
     return biz
 
@@ -75,14 +75,14 @@ def _place(biz):
         abort(400)
     ip = request.remote_addr or "?"
     if rate_limited(f"order:{biz['id']}:{ip}", 6, 600):
-        return jsonify(ok=False, error="Kısa sürede çok fazla sipariş gönderildi. Birkaç dakika sonra tekrar dene."), 429
+        return jsonify(ok=False, error="Kısa sürede çok fazla sipariş gönderildi. Birkaç dakika sonra tekrar dener misin?"), 429
     data = request.get_json(silent=True) or {}
     phone = core.normalize_phone(data.get("phone"))
     if phone:
         waiting = db.one("SELECT COUNT(*) AS n FROM orders WHERE business_id = ? AND customer_phone = ? "
                          "AND status = 'pending'", (biz["id"], phone))
         if int(waiting["n"]) >= 5:
-            return jsonify(ok=False, error="Onay bekleyen 5 siparişin var. Onaylanınca yenisini verebilirsin."), 429
+            return jsonify(ok=False, error="Onay bekleyen 5 siparişin var. Onlar onaylandıktan sonra yeni sipariş verebilirsin."), 429
     try:
         order = core.create_order(biz, data)
     except core.OrderError as e:
@@ -204,7 +204,7 @@ def _pay(biz, token):
                                status_url=status_url)
     ip = request.remote_addr or "0.0.0.0"
     if rate_limited(f"pay:{order['id']}", 8, 600):
-        return render_template("pay.html", biz=biz, order=order, error="Çok fazla deneme yapıldı, biraz sonra tekrar dene.",
+        return render_template("pay.html", biz=biz, order=order, error="Çok fazla deneme yapıldı. Biraz sonra tekrar dener misin?",
                                status_url=status_url), 429
     oid = paytr.merchant_oid()
     root = request.host_url.rstrip("/")
@@ -222,7 +222,7 @@ def _pay(biz, token):
         db.execute("UPDATE card_payments SET status = 'failed', reason = ? WHERE merchant_oid = ?", (log_reason, oid))
         db.commit()
         return render_template("pay.html", biz=biz, order=order, status_url=status_url,
-                               error="Ödeme sayfası açılamadı. Biraz sonra tekrar dene ya da işletmeyle iletişime geç.")
+                               error="Ödeme sayfası şu an açılamadı. Biraz sonra tekrar dener misin? Sorun sürerse işletmeyle iletişime geçebilirsin.")
     return render_template("pay.html", biz=biz, order=order, iframe_token=iframe, status_url=status_url)
 
 

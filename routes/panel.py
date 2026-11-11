@@ -228,7 +228,7 @@ def order_cargo(order_id):
     f = request.form
     url = (f.get("cargo_url") or "").strip()[:400]
     if url and not url.startswith(("https://", "http://")):
-        flash("Takip linki https:// ile başlamalı.", "error")
+        flash("Takip linki https:// ile başlamalı, kontrol eder misin?", "error")
         return redirect(url_for("panel.order", order_id=order_id) + "#kargo")
     db.update("orders", o["id"], {"cargo_company": (f.get("cargo_company") or "").strip()[:60],
                                   "cargo_tracking": (f.get("cargo_tracking") or "").strip()[:80],
@@ -237,7 +237,7 @@ def order_cargo(order_id):
     if f.get("and_ship") and o["status"] == "approved":
         try:
             core.set_status(g.biz, core.get_order(o["id"]), "on_the_way")
-            flash("Kargo bilgisi kaydedildi, sipariş 'Yolda' oldu. Müşteriye WhatsApp'tan haber ver.", "ok")
+            flash("Kargo bilgisi kaydedildi, sipariş 'Yolda' oldu. İstersen müşteriye WhatsApp'tan haber verebilirsin.", "ok")
             return redirect(url_for("panel.order", order_id=order_id) + "#haber")
         except core.OrderError as e:
             flash(str(e), "error")
@@ -283,7 +283,7 @@ def save_image(file_storage, biz_id, size=1100):
             im.save(out, "JPEG", quality=82, optimize=True, progressive=True)
             mime = "image/jpeg"
     except Exception:
-        raise ValueError("Fotoğraf okunamadı. JPG ya da PNG yükle.") from None
+        raise ValueError("Fotoğraf okunamadı. JPG ya da PNG bir fotoğraf yükler misin?") from None
     return db.insert("images", {"business_id": biz_id, "mime": mime, "data": db.blob(out.getvalue()),
                                 "created_at": core.now()})
 
@@ -319,9 +319,9 @@ def _stock(raw):
     try:
         n = int(raw)
     except ValueError:
-        raise ValueError("Stok adedini tam sayı olarak yaz (boş = sınırsız).") from None
+        raise ValueError("Stok adedi anlaşılamadı, tam sayı olarak yazar mısın? (boş = sınırsız)") from None
     if n < 0 or n > 1_000_000:
-        raise ValueError("Stok adedi 0 ile 1.000.000 arasında olmalı.")
+        raise ValueError("Stok adedi 0 ile 1.000.000 arasında olmalı, kontrol eder misin?")
     return n
 
 
@@ -334,11 +334,11 @@ def _variants_from_form(f):
         if not name and not (price_raw or "").strip():
             continue
         if not name:
-            raise ValueError("Her seçeneğe bir ad yaz (ör. 1 kg).")
+            raise ValueError("Bir seçeneğin adı eksik görünüyor (ör. 1 kg).")
         try:
             price = core.money(price_raw)
         except ValueError:
-            raise ValueError(f"'{name}' seçeneğinin fiyatını doğru yaz.") from None
+            raise ValueError(f"'{name}' seçeneğinin fiyatı anlaşılamadı, kontrol eder misin?") from None
         if price <= 0:
             raise ValueError(f"'{name}' seçeneğinin fiyatı 0'dan büyük olmalı.")
         vid = ids[i] if i < len(ids) else ""
@@ -387,11 +387,11 @@ def product_form(product_id=None):
                 try:
                     price = core.money(f.get("price"))
                 except ValueError:
-                    raise ValueError("Fiyatı doğru yaz (ör. 350 ya da 349,90).") from None
+                    raise ValueError("Fiyat anlaşılamadı, kontrol eder misin? (ör. 350 ya da 349,90)") from None
                 if price <= 0:
-                    raise ValueError("Fiyatı doğru yaz (ör. 350 ya da 349,90).")
+                    raise ValueError("Fiyat eksik ya da hatalı görünüyor, kontrol eder misin? (ör. 350 ya da 349,90)")
             if not name:
-                raise ValueError("Ürün adını yaz.")
+                raise ValueError("Ürün adı eksik görünüyor.")
             values = {"name": name, "description": (f.get("description") or "").strip()[:500],
                       "unit": (f.get("unit") or "").strip()[:40], "price": str(price),
                       "stock": None if new_variants else _stock(f.get("stock")),
@@ -512,15 +512,15 @@ def campaign():
                 text = (f.get("reward_text") or "").strip()[:120]
                 active = 1 if f.get("reward_active") else 0
                 if not 2 <= every <= 100:
-                    raise ValueError("Kaç damgada bir ödül verileceğini 2 ile 100 arasında yaz.")
+                    raise ValueError("Ödül için damga sayısı 2 ile 100 arasında olmalı, kontrol eder misin?")
                 if active and not text:
-                    raise ValueError("Ödülü yaz (ör. '1 kg zeytin' ya da '%10 indirim').")
+                    raise ValueError("Ödül yazılmamış görünüyor (ör. '1 kg zeytin' ya da '%10 indirim').")
                 mode = f.get("reward_mode") or "order"
                 if mode not in core.REWARD_MODES:
-                    raise ValueError("Damga türünü seç.")
+                    raise ValueError("Damga türü seçilmemiş görünüyor.")
                 per = core.money(f.get("reward_amount") or "0")
                 if mode == "amount" and per < 1:
-                    raise ValueError("Kaç TL'ye 1 damga verileceğini yaz (ör. 500).")
+                    raise ValueError("Kaç TL'ye 1 damga verileceği eksik görünüyor (ör. 500).")
                 try:
                     cap = max(0, min(100, int(f.get("reward_max_per_order") or 0)))
                 except ValueError:
@@ -533,23 +533,23 @@ def campaign():
                 val = core.money(f.get("first_discount_value") or "0")
                 active = 1 if f.get("first_discount_active") else 0
                 if kind not in ("percent", "amount"):
-                    raise ValueError("İndirim türünü seç.")
+                    raise ValueError("İndirim türü seçilmemiş görünüyor.")
                 if active and val <= 0:
-                    raise ValueError("İndirim miktarını yaz.")
+                    raise ValueError("İndirim miktarı eksik görünüyor.")
                 if kind == "percent" and val > 50:
-                    raise ValueError("Yüzde indirim en fazla %50 olabilir.")
+                    raise ValueError("Yüzde indirim en fazla %50 olabilir, kontrol eder misin?")
                 values = {"first_discount_active": active, "first_discount_type": kind, "first_discount_value": str(val)}
             elif section == "birthday":
                 text = (f.get("birthday_text") or "").strip()[:120]
                 active = 1 if f.get("birthday_active") else 0
                 if active and not text:
-                    raise ValueError("Doğum günü hediyesini yaz (ör. 250 g zeytin).")
+                    raise ValueError("Doğum günü hediyesi yazılmamış görünüyor (ör. 250 g zeytin).")
                 values = {"birthday_active": active, "birthday_text": text}
             elif section == "referral":
                 text = (f.get("referral_text") or "").strip()[:120]
                 active = 1 if f.get("referral_active") else 0
                 if active and not text:
-                    raise ValueError("Davet ödülünü yaz (ör. 1 kg zeytin).")
+                    raise ValueError("Davet ödülü yazılmamış görünüyor (ör. 1 kg zeytin).")
                 values = {"referral_active": active, "referral_text": text}
             else:
                 abort(400)
@@ -560,7 +560,7 @@ def campaign():
         except ValueError as e:
             db.rollback()
             msg = str(e)
-            flash("Tutarı rakamla yaz." if "geçersiz" in msg else msg, "error")
+            flash("Tutar anlaşılamadı, rakamla yazar mısın?" if "geçersiz" in msg else msg, "error")
     biz = db.one("SELECT * FROM businesses WHERE id = ?", (g.biz["id"],))
     stats = db.one("SELECT COUNT(*) AS earned, SUM(CASE WHEN status = 'given' THEN 1 ELSE 0 END) AS given "
                    "FROM rewards WHERE business_id = ?", (g.biz["id"],))
@@ -583,7 +583,7 @@ def broadcast():
             return redirect(url_for("panel.broadcast"))
         msg = (request.form.get("message") or "").strip()[:1000]
         if len(msg) < 5:
-            flash("Duyuru metnini yaz.", "error")
+            flash("Duyuru metni boş görünüyor.", "error")
             return redirect(url_for("panel.broadcast"))
         bc = db.insert("broadcasts", {"business_id": bid, "message": msg, "created_at": core.now()})
         db.commit()
@@ -674,17 +674,17 @@ def settings():
             try:
                 v[key] = str(core.money(f.get(key) or "0"))
             except ValueError:
-                errors.append("Tutarları rakamla yaz (ör. 50 ya da 49,90).")
+                errors.append("Tutarlar anlaşılamadı, rakamla yazar mısın? (ör. 50 ya da 49,90)")
                 break
         if v["pay_card"] and not (v["paytr_merchant_id"] and (v.get("paytr_key_enc") or b["paytr_key_enc"])
                                   and (v.get("paytr_salt_enc") or b["paytr_salt_enc"])):
-            errors.append("Kartla ödeme için PayTR Mağaza No, Merchant Key ve Merchant Salt gerekli.")
+            errors.append("Kartla ödeme için PayTR Mağaza No, Merchant Key ve Merchant Salt bilgileri gerekiyor.")
         if not (v["pay_cash"] or v["pay_pos"] or v["pay_iban"] or v["pay_card"]):
-            errors.append("En az bir ödeme yöntemi seç.")
+            errors.append("En az bir ödeme yöntemi açık olmalı.")
         if v["iban"] and not core.valid_iban(v["iban"]):
-            errors.append("IBAN geçersiz görünüyor. TR ile başlayan 26 karakterlik IBAN'ı kontrol et.")
+            errors.append("IBAN hatalı görünüyor. TR ile başlayan 26 karakterlik IBAN'ı kontrol eder misin?")
         if v["iban"] and not v["iban_holder"]:
-            errors.append("IBAN'daki hesap sahibinin adını yaz.")
+            errors.append("IBAN'daki hesap sahibinin adı eksik görünüyor.")
         if not v["delivery"] and not v["pickup"]:
             errors.append("Adrese teslim ya da gel al seçeneklerinden en az biri açık olmalı.")
         if errors:
@@ -822,7 +822,7 @@ def push_test():
         "url": "/panel/orders", "tag": "test"}, push_subject())
     if request.is_json:
         return jsonify(ok=bool(n), devices=n)
-    flash(f"{n} cihaza deneme bildirimi gönderildi." if n else "Kayıtlı cihaz yok. Önce bildirimleri aç.",
+    flash(f"{n} cihaza deneme bildirimi gönderildi." if n else "Henüz kayıtlı cihaz yok. Önce bu cihazda bildirimleri açabilirsin.",
           "ok" if n else "error")
     return redirect(url_for("panel.notifications"))
 
@@ -945,7 +945,7 @@ def zones():
         if action in ("add", "save"):
             name = (f.get("name") or "").strip()[:60]
             if not name:
-                raise ValueError("Bölge adını yaz (ör. Kocaeli içi).")
+                raise ValueError("Bölge adı eksik görünüyor (ör. Kocaeli içi).")
             fee = str(core.money(f.get("fee") or "0"))
             free_over = str(core.money(f.get("free_over") or "0"))
             if action == "add":
@@ -963,7 +963,7 @@ def zones():
         flash("Teslimat bölgeleri güncellendi.", "ok")
     except ValueError as e:
         db.rollback()
-        flash(str(e) if "geçersiz" not in str(e) else "Ücretleri rakamla yaz (ör. 50).", "error")
+        flash(str(e) if "geçersiz" not in str(e) else "Ücretler anlaşılamadı, rakamla yazar mısın? (ör. 50)", "error")
     return redirect(url_for("panel.settings") + "#bolgeler")
 
 

@@ -248,15 +248,15 @@
     showErr("");
     var el = form.elements, pay = form.querySelector('input[name="payment"]:checked') || form.querySelector('input[name="payment"]');
     var phone = (el.phone.value || "").replace(/\D/g, "");
-    if (!count()) return showErr("Sepetin boş.");
-    if ((el.name.value || "").trim().length < 2) { el.name.focus(); return showErr("Adını ve soyadını yaz."); }
-    if (!/^(90)?0?5\d{9}$/.test(phone)) { el.phone.focus(); return showErr("Telefon numaranı 05XX XXX XX XX şeklinde yaz."); }
-    if (fulfilment() === "delivery" && C.zones.length && !zone()) { el.zone.focus(); return showErr("Teslimat bölgeni seç."); }
-    if (fulfilment() === "delivery" && el.address && (el.address.value || "").trim().length < 10) { el.address.focus(); return showErr("Teslimat adresini açık yaz."); }
-    if (!pay) return showErr("Bir ödeme yöntemi seç.");
-    if (!el.kvkk.checked) return showErr("Devam etmek için bilgilendirme kutusunu işaretle.");
+    if (!count()) return showErr("Sepetin şu an boş görünüyor.");
+    if ((el.name.value || "").trim().length < 2) { el.name.focus(); return showErr("Ad ve soyad eksik görünüyor, kontrol eder misin?"); }
+    if (!/^(90)?0?5\d{9}$/.test(phone)) { el.phone.focus(); return showErr("Telefon numarası hatalı görünüyor. 05XX XXX XX XX şeklinde kontrol eder misin?"); }
+    if (fulfilment() === "delivery" && C.zones.length && !zone()) { el.zone.focus(); return showErr("Teslimat bölgesi seçilmemiş görünüyor, seçer misin?"); }
+    if (fulfilment() === "delivery" && el.address && (el.address.value || "").trim().length < 10) { el.address.focus(); return showErr("Adres eksik ya da hatalı girilmiş olabilir. Mahalle, sokak ve kapı numarasını kontrol eder misin?"); }
+    if (!pay) return showErr("Ödeme yöntemi seçilmemiş görünüyor, seçer misin?");
+    if (!el.kvkk.checked) return showErr("Devam edebilmek için bilgilendirme kutusunu onaylaman gerekiyor.");
     var min = num(C.minOrder);
-    if (min > 0 && subtotal() < min) return showErr("En az sipariş tutarı " + tl(min) + ".");
+    if (min > 0 && subtotal() < min) return showErr("En az sipariş tutarı " + tl(min) + ". Sepetine biraz daha ürün ekleyebilir misin?");
 
     var btn = $("st-send");
     btn.disabled = true; btn.textContent = "Gönderiliyor…";
@@ -270,9 +270,9 @@
       birth_day: el.birth_day ? el.birth_day.value : null, birth_month: el.birth_month ? el.birth_month.value : null
     };
     fetch(C.orderUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
-      .then(function (r) { return r.json().catch(function () { return { ok: false, error: "Sunucuya ulaşılamadı." }; }); })
+      .then(function (r) { return r.json().catch(function () { return { ok: false, error: "Şu an bağlantı kurulamadı. Birazdan tekrar dener misin?" }; }); })
       .then(function (res) {
-        if (!res.ok) throw new Error(res.error || "Sipariş gönderilemedi.");
+        if (!res.ok) throw new Error(res.error || "Sipariş gönderilemedi. Birazdan tekrar dener misin?");
         try {
           localStorage.setItem(ME, JSON.stringify({ name: body.name, phone: body.phone, address: body.address }));
           localStorage.removeItem(C.cartKey);
@@ -282,7 +282,7 @@
         location.href = res.pay_url || res.url;
       })
       .catch(function (err) {
-        showErr(err.message || "Bağlantı sorunu. Tekrar dene.");
+        showErr(err.message || "Bağlantı sorunu oldu. Tekrar dener misin?");
         btn.disabled = false; btn.textContent = "Siparişi gönder";
       });
   });

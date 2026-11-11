@@ -37,7 +37,7 @@
     if (iban) iban.hidden = d.paid || idx < 0;
     if (paid) paid.hidden = !d.paid;
     var it = $("os-iban-text");
-    if (it && d.paid_amount && !d.paid) it.innerHTML = "<b></b> ödemen alındı. Kalan <b></b> tutarı aşağıdaki hesaba gönder. Açıklamaya <b></b> yaz.";
+    if (it && d.paid_amount && !d.paid) it.innerHTML = "<b></b> ödemen alındı, teşekkürler. Kalan <b></b> tutarını aşağıdaki hesaba gönderebilirsin. Açıklamaya <b></b> yazmayı unutma lütfen.";
     if (it && d.paid_amount && !d.paid) { var bs = it.querySelectorAll("b"); bs[0].textContent = d.paid_amount; bs[1].textContent = d.remaining; bs[2].textContent = "Sipariş " + d.id; }
     var cash = $("os-cash");
     if (cash && d.paid) cash.textContent = "✓ Ödemen alındı";
