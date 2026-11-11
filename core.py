@@ -4,8 +4,9 @@ Kurallar
 - Fiyatlar her zaman sunucuda, ürünün güncel fiyatından hesaplanır; telefondan gelen fiyata güvenilmez.
 - Müşteri telefon numarasıyla tanınır (işletme başına ayrı müşteri kaydı).
 - Sipariş "Onay bekliyor" düşer; işletme sahibi onaylar ya da reddeder.
-- Ödül: kampanya açıksa, onaylanan ve en az `reward_min_total` tutarındaki her sipariş 1 sayılır.
-  Sayılan sipariş sayısı `reward_every`'nin katına ulaşınca müşteriye ödül yazılır.
+- Ödül (damga kartı): onaylanan sipariş damga kazandırır. Damga türü işletmece seçilir:
+  order = sipariş başına 1 (en az `reward_min_total` tutarındaysa), item = her ürün adedi 1,
+  amount = her `reward_amount` TL'ye 1. Damga sayısı `reward_every`'nin her katında 1 ödül yazılır.
   Onaylanmış sipariş iptal edilirse sayılmaz; o siparişle kazanılan, henüz verilmemiş ödül de silinir.
 """
 import re
@@ -155,15 +156,45 @@ def business_by_slug(slug):
     return db.one("SELECT * FROM businesses WHERE slug = ? AND active = 1", (slug,))
 
 
+REWARD_MODES = {"order": "Sipariş başına", "item": "Ürün adedi başına", "amount": "Tutar başına"}
+
+
+def reward_mode(biz):
+    m = biz.get("reward_mode") or "order"
+    return m if m in REWARD_MODES else "order"
+
+
 def reward_rule(biz):
     """Mağazada gösterilecek kampanya metni; kampanya kapalıysa None."""
     if not biz["reward_active"] or not biz["reward_text"] or int(biz["reward_every"] or 0) < 2:
         return None
-    text = f"Her {biz['reward_every']} siparişe {biz['reward_text']} hediye"
+    every, gift, mode = biz["reward_every"], biz["reward_text"], reward_mode(biz)
+    if mode == "item":
+        return f"Her {every} ürüne {gift} hediye"
+    if mode == "amount":
+        return f"Her {tl(money(biz['reward_amount']))} alışverişe 1 damga, {every} damgada {gift} hediye"
+    text = f"Her {every} siparişe {gift} hediye"
     mt = money(biz["reward_min_total"])
     if mt > 0:
         text += f" ({tl(mt)} ve üzeri siparişler sayılır)"
     return text
+
+
+def stamps_for(biz, order):
+    """Bu siparişin kazandıracağı damga sayısı (kampanya kurallarına göre)."""
+    if not reward_rule(biz):
+        return 0
+    mode = reward_mode(biz)
+    base = money(order["total"]) - money(order["delivery_fee"])
+    if mode == "item":
+        n = sum(int(l["qty"]) for l in order_lines(order["id"]))
+    elif mode == "amount":
+        per = money(biz["reward_amount"])
+        n = int(base // per) if per > 0 else 0
+    else:
+        n = 1 if base >= money(biz["reward_min_total"]) else 0
+    cap = int(biz.get("reward_max_per_order") or 0)
+    return min(n, cap) if cap > 0 else n
 
 
 def catalog(biz_id, only_visible=True):
@@ -490,7 +521,8 @@ def order_lines(order_id):
 # ── Sadakat ─────────────────────────────────────────────────────────────────
 
 def counted_orders(customer_id):
-    r = db.one(f"SELECT COUNT(*) AS n FROM orders WHERE customer_id = ? AND counts_for_reward = 1 "
+    """Müşterinin toplam damgası (adı geriye dönük uyum için kaldı)."""
+    r = db.one(f"SELECT COALESCE(SUM(stamps), 0) AS n FROM orders WHERE customer_id = ? AND counts_for_reward = 1 "
                f"AND status IN ({','.join('?' for _ in COUNTED)})", (customer_id, *COUNTED))
     return int(r["n"])
 
@@ -504,14 +536,15 @@ def loyalty_card(biz, customer_id):
     every = max(int(biz["reward_every"] or 0), 2)
     n = counted_orders(customer_id)
     filled = n % every
+    mode = reward_mode(biz)
     return {"active": bool(reward_rule(biz)), "every": every, "filled": filled, "left": every - filled,
-            "total": n, "text": biz["reward_text"], "rule": reward_rule(biz), "rewards": pending}
+            "total": n, "text": biz["reward_text"], "rule": reward_rule(biz), "rewards": pending, "mode": mode,
+            "unit": {"order": "sipariş", "item": "ürün", "amount": "damga"}[mode],
+            "per": tl(money(biz["reward_amount"])) if mode == "amount" else ""}
 
 
 def _order_qualifies(biz, order):
-    if not reward_rule(biz):
-        return False
-    return money(order["total"]) - money(order["delivery_fee"]) >= money(biz["reward_min_total"])
+    return stamps_for(biz, order) > 0
 
 
 KIND_LABEL = {"stamp": "Damga ödülü", "referral": "Davet ödülü", "birthday": "Doğum günü hediyesi"}
@@ -550,9 +583,11 @@ def set_status(biz, order, new_status, reason="", message=None):
         changes["owner_message"] = message.strip()[:300]
     earned = []
     try:
+        stamps_before = counted_orders(order["customer_id"])
         if new_status == "approved":
             changes["approved_at"] = now()
-            changes["counts_for_reward"] = 1 if _order_qualifies(biz, order) else 0
+            changes["stamps"] = stamps_for(biz, order)
+            changes["counts_for_reward"] = 1 if changes["stamps"] > 0 else 0
         if new_status in ("rejected", "cancelled"):
             changes["reject_reason"] = (reason or "").strip()[:300]
             release_stock(order)
@@ -567,8 +602,8 @@ def set_status(biz, order, new_status, reason="", message=None):
         if new_status == "approved":
             if changes["counts_for_reward"]:
                 every = int(biz["reward_every"])
-                n = counted_orders(order["customer_id"])
-                if n > 0 and n % every == 0:
+                after = counted_orders(order["customer_id"])
+                for _ in range(after // every - stamps_before // every):
                     earned.append(_add_reward(biz, order["customer_id"], order["id"], biz["reward_text"], "stamp"))
             customer = db.one("SELECT * FROM customers WHERE id = ?", (order["customer_id"],))
             if order.get("referred_by") and biz["referral_active"] and biz["referral_text"] and not customer["referred_by"]:

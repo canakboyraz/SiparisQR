@@ -120,7 +120,9 @@ def _status_data(biz, order):
         "remaining": core.tl(core.payment_state(order)["remaining"]),
         "card": None if not card else {
             "every": card["every"], "filled": card["filled"], "left": card["left"], "active": card["active"],
-            "text": card["text"], "rewards": [r["text"] for r in card["rewards"]],
+            "text": card["text"], "rewards": [r["text"] for r in card["rewards"]], "unit": card["unit"],
+            "mode": card["mode"], "per": card["per"], "rule": card["rule"],
+            "got": int(order["stamps"] or 0) if order["counts_for_reward"] and order["status"] in core.COUNTED else 0,
         },
     }
 

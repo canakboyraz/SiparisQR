@@ -1,5 +1,15 @@
 {% extends "panel/layout.html" %}
 {% block ptitle %}Kampanya{% endblock %}
+{% block pscripts %}<script>
+(function () {
+  var box = document.getElementById("rw-mode");
+  function sync() {
+    var m = (box.querySelector("input:checked") || {}).value || "order";
+    document.querySelectorAll("[data-mode]").forEach(function (el) { el.hidden = el.getAttribute("data-mode").split(" ").indexOf(m) < 0; });
+  }
+  box.addEventListener("change", sync); sync();
+})();
+</script>{% endblock %}
 {% block content %}
 <h1>Kampanyalar</h1>
 <p class="muted">Müşteri telefon numarasıyla tanınır. Ödüller sipariş <b>onaylanınca</b> hesaplanır; reddedilen ve iptal edilen siparişler sayılmaz. Kazanılan ödül siparişte "🎁 ödülü var" diye görünür.</p>
@@ -8,11 +18,23 @@
   <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="section" value="stamp">
   <h2>🎁 Damga kartı</h2>
   <label class="switch"><input type="checkbox" name="reward_active" value="1" {% if b.reward_active %}checked{% endif %}><span>Açık</span></label>
+  {% set mode = b.reward_mode or 'order' %}
+  <fieldset class="seg seg-mode" id="rw-mode">
+    <legend>Damga neye göre verilsin?</legend>
+    <label><input type="radio" name="reward_mode" value="order" {% if mode == 'order' %}checked{% endif %}><span>Sipariş başına<small>her sipariş 1 damga</small></span></label>
+    <label><input type="radio" name="reward_mode" value="item" {% if mode == 'item' %}checked{% endif %}><span>Ürün başına<small>6 ürün alan 6 damga</small></span></label>
+    <label><input type="radio" name="reward_mode" value="amount" {% if mode == 'amount' %}checked{% endif %}><span>Tutar başına<small>her X TL 1 damga</small></span></label>
+  </fieldset>
+  <label class="fld" data-mode="amount"><span>Kaç TL'ye 1 damga?</span><input name="reward_amount" inputmode="decimal" value="{{ (b.reward_amount or '500')|replace('.00', '') }}" placeholder="500">
+    <small>ör. 500 yazarsan 1.200 TL'lik sipariş 2 damga getirir (teslimat ücreti sayılmaz)</small></label>
   <div class="row2">
-    <label class="fld"><span>Kaç siparişte bir?</span><input name="reward_every" type="number" min="2" max="100" value="{{ b.reward_every }}" required></label>
+    <label class="fld"><span>Kaç damgada bir ödül?</span><input name="reward_every" type="number" min="2" max="100" value="{{ b.reward_every }}" required>
+      <small>ör. 6 → 6., 12., 18. damgada ödül</small></label>
     <label class="fld"><span>Ödül ne?</span><input name="reward_text" value="{{ b.reward_text }}" maxlength="120" placeholder="ör. 1 kg zeytin"></label>
   </div>
-  <label class="fld"><span>Sayılması için en az tutar (TL)</span><input name="reward_min_total" inputmode="decimal" value="{{ b.reward_min_total|replace('.00', '') }}"><small>0 = her sipariş sayılır</small></label>
+  <label class="fld" data-mode="order"><span>Damga için en az sipariş tutarı (TL)</span><input name="reward_min_total" inputmode="decimal" value="{{ b.reward_min_total|replace('.00', '') }}"><small>0 = her sipariş sayılır</small></label>
+  <label class="fld" data-mode="item amount"><span>Bir siparişte en fazla kaç damga?</span><input name="reward_max_per_order" type="number" min="0" max="100" value="{{ b.reward_max_per_order or 0 }}">
+    <small>0 = sınırsız. Tek seferde çok büyük siparişle ödül toplanmasını sınırlamak için.</small></label>
   <div class="preview"><small>Mağazada:</small><b>{{ rule or 'Kapalı' }}</b></div>
   <button class="btn-primary" type="submit">Kaydet</button>
 </form>

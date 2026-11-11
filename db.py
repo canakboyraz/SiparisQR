@@ -246,6 +246,12 @@ MIGRATIONS = [
     ("businesses", "instagram", "TEXT NOT NULL DEFAULT ''"),
     ("businesses", "about", "TEXT NOT NULL DEFAULT ''"),
     ("businesses", "pay_pos", "INTEGER NOT NULL DEFAULT 0"),
+    # damga türü: order (sipariş başına) / item (ürün adedi başına) / amount (her X TL'ye)
+    ("businesses", "reward_mode", "TEXT NOT NULL DEFAULT 'order'"),
+    ("businesses", "reward_amount", "TEXT NOT NULL DEFAULT '500'"),
+    ("businesses", "reward_max_per_order", "INTEGER NOT NULL DEFAULT 0"),
+    # eski siparişler sipariş başına 1 damga sayılır
+    ("orders", "stamps", "INTEGER NOT NULL DEFAULT 1"),
     # 4. aşama: abonelik
     ("businesses", "plan", "TEXT NOT NULL DEFAULT 'trial'"),
     ("businesses", "paid_until", "TEXT"),

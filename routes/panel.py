@@ -512,10 +512,21 @@ def campaign():
                 text = (f.get("reward_text") or "").strip()[:120]
                 active = 1 if f.get("reward_active") else 0
                 if not 2 <= every <= 100:
-                    raise ValueError("Kaç siparişte bir ödül verileceğini 2 ile 100 arasında yaz.")
+                    raise ValueError("Kaç damgada bir ödül verileceğini 2 ile 100 arasında yaz.")
                 if active and not text:
                     raise ValueError("Ödülü yaz (ör. '1 kg zeytin' ya da '%10 indirim').")
-                values = {"reward_active": active, "reward_every": every, "reward_text": text,
+                mode = f.get("reward_mode") or "order"
+                if mode not in core.REWARD_MODES:
+                    raise ValueError("Damga türünü seç.")
+                per = core.money(f.get("reward_amount") or "0")
+                if mode == "amount" and per < 1:
+                    raise ValueError("Kaç TL'ye 1 damga verileceğini yaz (ör. 500).")
+                try:
+                    cap = max(0, min(100, int(f.get("reward_max_per_order") or 0)))
+                except ValueError:
+                    cap = 0
+                values = {"reward_active": active, "reward_every": every, "reward_text": text, "reward_mode": mode,
+                          "reward_amount": str(per) if per >= 1 else "500.00", "reward_max_per_order": cap,
                           "reward_min_total": str(core.money(f.get("reward_min_total") or "0"))}
             elif section == "first":
                 kind = f.get("first_discount_type")
@@ -602,7 +613,7 @@ def broadcast():
 def customers():
     q = (request.args.get("q") or "").strip()
     sql = ("SELECT c.*, (SELECT COUNT(*) FROM orders o WHERE o.customer_id = c.id) AS orders, "
-           "(SELECT COUNT(*) FROM orders o WHERE o.customer_id = c.id AND o.counts_for_reward = 1 "
+           "(SELECT COALESCE(SUM(o.stamps), 0) FROM orders o WHERE o.customer_id = c.id AND o.counts_for_reward = 1 "
            " AND o.status IN ('approved','on_the_way','delivered')) AS counted, "
            "(SELECT MAX(o.created_at) FROM orders o WHERE o.customer_id = c.id) AS last_at "
            "FROM customers c WHERE c.business_id = ?")

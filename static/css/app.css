@@ -371,8 +371,12 @@ code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:
 .pay-add summary::-webkit-details-marker{display:none}
 .pay-add summary::before{content:"+ "}
 .pay-add[open] summary{margin-bottom:8px}
+.seg-mode label{min-width:calc(33% - 6px)}
+.seg-mode span{min-height:62px;font-size:14.5px}
 .seg-sm label{min-width:calc(50% - 4px);flex:1 1 calc(50% - 4px)}
-@media(min-width:560px){.seg-sm label{min-width:0;flex:1}}
+@media(min-width:560px){.seg-mode label{min-width:calc(33% - 6px)}
+.seg-mode span{min-height:62px;font-size:14.5px}
+.seg-sm label{min-width:0;flex:1}}
 .seg-sm span{min-height:44px;font-size:14.5px}
 .pay-row-card{background:#fff;border-radius:18px;box-shadow:var(--shadow);overflow:hidden}
 .pay-row-card .ol-row{box-shadow:none;border-radius:0}

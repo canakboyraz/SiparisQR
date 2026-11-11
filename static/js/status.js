@@ -70,8 +70,11 @@
     }
     var t;
     if (!c.active) t = "Kampanya şu an kapalı.";
-    else if (c.filled === 0 && !c.rewards.length) t = "Her " + c.every + " siparişte " + c.text + " hediye. İlk damgan sipariş onaylanınca gelir.";
-    else t = c.filled + " / " + c.every + " · " + c.text + " için " + c.left + " sipariş kaldı.";
+    else if (c.filled === 0 && !c.rewards.length && !c.got) t = c.rule + ". Damgaların sipariş onaylanınca gelir.";
+    else {
+      t = (c.got ? "Bu siparişle +" + c.got + " damga kazandın. " : "") + c.filled + " / " + c.every + " · " + c.text + " için " +
+        (c.mode === "amount" ? c.left + " damga (her " + c.per + " = 1 damga)" : c.left + " " + c.unit) + " kaldı.";
+    }
     $("os-loyal-text").textContent = t;
     var gift = $("os-gift");
     gift.hidden = !c.rewards.length;

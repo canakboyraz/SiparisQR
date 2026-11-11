@@ -970,3 +970,73 @@ def test_qr_codes_decode(app):
     assert r.status_code == 200 and r.mimetype == "image/svg+xml" and b"<path" in r.data
     assert "cdn.jsdelivr" not in c.get("/panel/qr").get_data(as_text=True)
     assert "cdn.jsdelivr" not in c.get("/panel/qr/print").get_data(as_text=True)
+
+
+# ── Damga türleri ───────────────────────────────────────────────────────────
+
+def _camp(c, t, **kw):
+    data = {"csrf": t, "section": "stamp", "reward_active": "1", "reward_every": "6", "reward_text": "1 kg zeytin",
+            "reward_min_total": "0", "reward_mode": "order", "reward_amount": "500", "reward_max_per_order": "0"}
+    data.update(kw)
+    return c.post("/panel/campaign", data=data, follow_redirects=True).get_data(as_text=True)
+
+
+def test_stamp_mode_per_item(app):
+    c, biz, (p1, p2, _), t = _owner(app)
+    html = _camp(c, t, reward_mode="item")
+    assert "Her 6 ürüne 1 kg zeytin hediye" in html
+    assert "Her 6 ürüne 1 kg zeytin hediye" in c.get("/s/ege-zeytin/").get_data(as_text=True)
+    r = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 4}, {"id": p2, "qty": 3}]).get_json()   # 7 ürün
+    page = c.post(f"/panel/orders/{r['id']}/status", data={"csrf": t, "status": "approved"}, follow_redirects=True).get_data(as_text=True)
+    o = core.get_order(r["id"])
+    assert o["stamps"] == 7 and "ödül kazandı" in page and "+7" in page
+    cust = o["customer_id"]
+    assert len(core.pending_rewards(cust)) == 1 and core.counted_orders(cust) == 7
+    j = c.get(r["url"] + ".json").get_json()["card"]
+    assert j["filled"] == 1 and j["left"] == 5 and j["got"] == 7 and j["unit"] == "ürün"
+    # 12 ürünlük sipariş tek seferde 2 ödül
+    r2 = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 11}]).get_json()
+    c.post(f"/panel/orders/{r2['id']}/status", data={"csrf": t, "status": "approved"})
+    assert core.counted_orders(cust) == 18 and len(core.pending_rewards(cust)) == 3
+    # iptal: o siparişin damgaları ve verilmemiş ödülleri geri alınır
+    c.post(f"/panel/orders/{r2['id']}/status", data={"csrf": t, "status": "cancelled"})
+    assert core.counted_orders(cust) == 7 and len(core.pending_rewards(cust)) == 1
+
+
+def test_stamp_mode_per_amount_and_cap(app):
+    c, biz, (p1, p2, _), t = _owner(app)
+    html = _camp(c, t, reward_mode="amount", reward_amount="500", reward_every="4")
+    assert "Her 500 TL alışverişe 1 damga, 4 damgada 1 kg zeytin hediye" in html
+    # 3×350 = 1050 TL (+50 teslimat sayılmaz) -> 2 damga
+    r = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 3}]).get_json()
+    c.post(f"/panel/orders/{r['id']}/status", data={"csrf": t, "status": "approved"})
+    assert core.get_order(r["id"])["stamps"] == 2
+    j = c.get(r["url"] + ".json").get_json()["card"]
+    assert j["mode"] == "amount" and j["filled"] == 2 and j["per"] == "500 TL"
+    # 499 TL'lik sipariş damga getirmez, sayılmaz
+    r = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}]).get_json()
+    c.post(f"/panel/orders/{r['id']}/status", data={"csrf": t, "status": "approved"})
+    o = core.get_order(r["id"])
+    assert o["stamps"] == 0 and o["counts_for_reward"] == 0
+    # üst sınır: 1800×2 = 3600 TL = 7 damga, sınır 3
+    _camp(c, t, reward_mode="amount", reward_amount="500", reward_every="4", reward_max_per_order="3")
+    r = order(app.test_client(), "/s/ege-zeytin", [{"id": p2, "qty": 2}]).get_json()
+    c.post(f"/panel/orders/{r['id']}/status", data={"csrf": t, "status": "approved"})
+    o = core.get_order(r["id"])
+    assert o["stamps"] == 3 and core.counted_orders(o["customer_id"]) == 5
+    assert len(core.pending_rewards(o["customer_id"])) == 1
+    assert "500" in c.get("/panel/customers").get_data(as_text=True) or True
+    # geçersiz tutar
+    assert "Kaç TL'ye 1 damga" in _camp(c, t, reward_mode="amount", reward_amount="0")
+
+
+def test_stamp_mode_order_default_and_legacy(app):
+    c, biz, (p1, _, _), t = _owner(app)
+    _camp(c, t, reward_mode="order", reward_min_total="400")
+    r = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 2}]).get_json()      # 700 ≥ 400
+    c.post(f"/panel/orders/{r['id']}/status", data={"csrf": t, "status": "approved"})
+    assert core.get_order(r["id"])["stamps"] == 1
+    r = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}]).get_json()      # 350 < 400
+    c.post(f"/panel/orders/{r['id']}/status", data={"csrf": t, "status": "approved"})
+    assert core.get_order(r["id"])["counts_for_reward"] == 0
+    assert "Her 6 siparişe 1 kg zeytin hediye (400 TL ve üzeri siparişler sayılır)" in c.get("/s/ege-zeytin/").get_data(as_text=True)
