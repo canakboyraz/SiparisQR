@@ -24,18 +24,4 @@
   <p class="muted">Bunlar işletmelerin "Abonelik" sayfasında ve tanıtım sayfasında görünür.</p>
   <button class="btn-primary" type="submit">Kaydet</button>
 </form>
-<section class="card" id="telegram">
-  <h2>Telegram (sesli sipariş bildirimi)</h2>
-  {% if tg_enabled %}
-  <p>Bot: <b>@{{ tg_bot }}</b> · Webhook: {% if tg_info and tg_info.url %}<span class="pill pay-paid">kurulu</span>{% else %}<span class="pill pay-none">kurulmadı</span>{% endif %}</p>
-  {% if tg_info and tg_info.last_error_message %}<p class="flash is-error">Son hata: {{ tg_info.last_error_message }}</p>{% endif %}
-  <form method="post" action="{{ url_for('admin.telegram_setup') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="btn-primary" type="submit">Telegram webhook'unu kur / yenile</button></form>
-  {% else %}
-  <ol class="steps">
-    <li>Telegram'da <b>@BotFather</b>'a yaz → <code>/newbot</code> → bota bir ad ve <code>…_bot</code> ile biten bir kullanıcı adı ver.</li>
-    <li>BotFather'ın verdiği token'ı Railway → SiparisQR → Variables'a <code>TELEGRAM_BOT_TOKEN</code> olarak, kullanıcı adını <code>TELEGRAM_BOT_USERNAME</code> olarak ekle.</li>
-    <li>Yayına alındıktan sonra bu sayfaya dönüp "webhook'u kur"a bas.</li>
-  </ol>
-  {% endif %}
-</section>
 {% endblock %}

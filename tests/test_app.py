@@ -1120,58 +1120,6 @@ def test_low_stock_alert(app, monkeypatch):
     assert "Siyah Zeytin: 2 adet kaldı" in body
 
 
-# ── Telegram ────────────────────────────────────────────────────────────────
-
-def test_telegram_link_and_notify(app, monkeypatch):
-    import telegram
-    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:ABC")
-    monkeypatch.setenv("TELEGRAM_BOT_USERNAME", "SiparisQRBot")
-    calls = []
-    monkeypatch.setattr(telegram, "call", lambda method, session=None, **p: calls.append((method, p)) or {"ok": True})
-    c, biz, (p1, _, _), t = _owner(app)
-    html = c.get("/panel/notifications").get_data(as_text=True)
-    code = telegram.link_code(biz["id"])
-    assert f"https://t.me/SiparisQRBot?start={code}" in html and "sessiz" in html
-    # sahte/yanlış kod ve yanlış webhook gizli anahtarı
-    cl = app.test_client()
-    assert cl.post("/telegram/webhook/yanlis", json={}).status_code == 404
-    hook = f"/telegram/webhook/{telegram.webhook_secret()}"
-    cl.post(hook, json={"message": {"chat": {"id": 555, "first_name": "Ali"}, "text": f"/start b{biz['id']}_deadbeef00000000"}})
-    assert db.one("SELECT COUNT(*) AS n FROM telegram_chats")["n"] == 0
-    cl.post(hook, json={"message": {"chat": {"id": 555, "first_name": "Ali"}, "text": f"/start {code}"}})
-    assert db.one("SELECT chat_id FROM telegram_chats WHERE business_id = ?", (biz["id"],))["chat_id"] == "555"
-    assert calls[-1][0] == "sendMessage" and "Bağlandı" in calls[-1][1]["text"]
-    # sipariş bildirimi Telegram'a gider (arka plan yerine senkron)
-    monkeypatch.setattr(telegram, "send_to_business",
-                        lambda bid, text, url=None, background=True: _sync_send(telegram, bid, text, url))
-    order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 2}], referrer_name="Ayşe Hanım")
-    sent = [p for m, p in calls if m == "sendMessage" and p.get("chat_id") == "555"]
-    assert sent and "Yeni sipariş" in sent[-1]["text"] and "Referans: Ayşe Hanım" in sent[-1]["text"]
-    assert sent[-1]["reply_markup"]["inline_keyboard"][0][0]["url"].endswith("/panel/orders/1")
-    # /durdur
-    cl.post(hook, json={"message": {"chat": {"id": 555}, "text": "/durdur"}})
-    assert db.one("SELECT COUNT(*) AS n FROM telegram_chats")["n"] == 0
-
-
-def _sync_send(telegram, bid, text, url):
-    import telegram as tg
-    chats = db.query("SELECT * FROM telegram_chats WHERE business_id = ?", (bid,))
-    for ch in chats:
-        p = {"chat_id": ch["chat_id"], "text": text}
-        if url:
-            p["reply_markup"] = {"inline_keyboard": [[{"text": "Siparişi aç", "url": url}]]}
-        tg.call("sendMessage", **p)
-    return len(chats)
-
-
-def test_telegram_disabled_and_admin(app, monkeypatch):
-    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
-    c, biz, _, t = _owner(app)
-    assert "henüz platformda açılmadı" in c.get("/panel/notifications").get_data(as_text=True)
-    a = app.test_client(); login(a, "admin@x.com", "adminpass123")
-    assert "@BotFather" in a.get("/admin/settings").get_data(as_text=True)
-
-
 # ── Referans adı + kasa modu ────────────────────────────────────────────────
 
 def test_referrer_name(app):
@@ -1198,3 +1146,11 @@ def test_kasa_mode_markup_and_poll(app):
     order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}])
     j = c.get("/panel/orders/poll").get_json()
     assert j["latest"] == 1 and j["last"]["name"] == "Ayşe Yılmaz" and j["last"]["total"] == "400 TL"
+
+
+
+def test_telegram_removed(app):
+    c, biz, _, t = _owner(app)
+    assert "Telegram" not in c.get("/panel/notifications").get_data(as_text=True)
+    assert "Sesli kasa modu" in c.get("/panel/notifications").get_data(as_text=True)
+    assert app.test_client().post("/telegram/webhook/x", json={}).status_code in (404, 405)

@@ -3,31 +3,16 @@
 {% block content %}
 <h1>Bildirimler</h1>
 
-<section class="card tg-card" id="telegram">
-  <h2>🔔 Sesli bildirim: Telegram <span class="pill pay-paid">önerilen</span></h2>
-  <p class="muted">iPhone'da ana ekrana eklenen web uygulamalarının bildirimleri <b>sessiz</b> gelir; bu Apple'ın kısıtı. Telegram'a bağlarsan her sipariş <b>sesli</b> gelir, istersen sohbete özel zil sesi de seçebilirsin. Android'de de çalışır.</p>
-  {% if tg_enabled %}
-    {% if tg_chats %}
-    <ul class="dev">
-      {% for c in tg_chats %}<li><span>✅ {{ c.title or 'Telegram sohbeti' }}<small>{{ local_time(c.created_at, '%d.%m.%Y') }} tarihinde bağlandı</small></span>
-        <form method="post" action="{{ url_for('panel.telegram_remove') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="id" value="{{ c.id }}"><button class="btn-link is-danger" type="submit">Kaldır</button></form></li>{% endfor %}
-    </ul>
-    {% endif %}
-    <a class="btn-primary btn-big tg-btn" href="{{ tg_link }}" target="_blank" rel="noopener">{{ 'Başka bir telefonu da bağla' if tg_chats else "Telegram'a bağla" }}</a>
-    <ol class="steps"><li>Düğmeye dokun, Telegram açılır.</li><li><b>Başlat</b>'a bas; "Bağlandı" mesajı gelir.</li><li>İsteğe bağlı: sohbetin adına dokun → <b>Bildirimler</b> → <b>Ses</b>'ten dikkat çekici bir zil seç.</li></ol>
-    {% if tg_chats %}<form method="post" action="{{ url_for('panel.push_test') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="btn-ghost" type="submit">Deneme bildirimi gönder</button></form>{% endif %}
-  {% else %}
-    <p class="flash is-gift">Telegram bildirimi henüz platformda açılmadı. Platform yöneticisiyle iletişime geçebilirsin.</p>
-  {% endif %}
-</section>
+
+<p class="flash is-gift">iPhone'da ana ekrana eklenen web uygulamalarının bildirimleri sessiz gelebilir; bu Apple'ın kısıtıdır. Sesli uyarı için kasadaki tablet ya da telefonda <b>Sesli kasa modu</b>nu kullanabilirsin.</p>
 
 <section class="card">
-  <h2>📢 Sesli kasa modu</h2>
+  <h2>📢 Sesli kasa modu <span class="pill pay-paid">önerilen</span></h2>
   <p class="muted">Tablet ya da telefon kasada açık duruyorsa: ekran kapanmaz, yeni sipariş gelince <b>"Gördüm"e basılana kadar</b> yüksek sesle çalar. Uygulama açıkken iPhone'da da sesli çalışır.</p>
   <a class="btn-ghost btn-big" href="{{ url_for('panel.orders') }}?kasa=1">Sesli kasa modunu aç</a>
 </section>
 
-<h2 class="sub-h">Telefon bildirimleri (sessiz olabilir)</h2>
+<h2 class="sub-h">Telefon bildirimleri</h2>
 <section class="card" id="np" data-vapid="{{ vapid }}" data-sub="{{ url_for('panel.push_subscribe') }}" data-unsub="{{ url_for('panel.push_unsubscribe') }}" data-test="{{ url_for('panel.push_test') }}">
   <p id="np-state" class="np-state">Kontrol ediliyor…</p>
   <div class="act-row">

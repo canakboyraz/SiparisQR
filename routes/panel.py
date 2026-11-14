@@ -829,21 +829,9 @@ def qr_print():
 @bp.get("/notifications")
 @login_required
 def notifications():
-    import telegram
     subs = db.query("SELECT * FROM push_subscriptions WHERE business_id = ? ORDER BY id DESC", (g.biz["id"],))
-    tg = db.query("SELECT * FROM telegram_chats WHERE business_id = ? ORDER BY id DESC", (g.biz["id"],))
-    return render_template("panel/notifications.html", active="notifications", subs=subs, tg_chats=tg,
-                           tg_enabled=telegram.enabled(), tg_link=telegram.deep_link(g.biz["id"]) if telegram.enabled() else None,
+    return render_template("panel/notifications.html", active="notifications", subs=subs,
                            vapid=webpush.vapid_public_key_b64())
-
-
-@bp.post("/telegram/remove")
-@login_required
-def telegram_remove():
-    db.execute("DELETE FROM telegram_chats WHERE id = ? AND business_id = ?", (request.form.get("id", type=int), g.biz["id"]))
-    db.commit()
-    flash("Telegram bağlantısı kaldırıldı.", "ok")
-    return redirect(url_for("panel.notifications"))
 
 
 @bp.post("/push/subscribe")

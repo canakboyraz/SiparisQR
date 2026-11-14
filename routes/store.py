@@ -273,25 +273,3 @@ def paytr_callback():
                    ((f.get("failed_reason_msg") or f.get("status") or "")[:300], cp["id"]))
         db.commit()
     return "OK"
-
-
-
-@bp.post("/telegram/webhook/<secret>")
-def telegram_webhook(secret):
-    import hmac as _hmac
-    import telegram
-    if not telegram.enabled() or not _hmac.compare_digest(secret, telegram.webhook_secret()):
-        abort(404)
-    update = request.get_json(silent=True) or {}
-
-    def name_for(biz_id):
-        b = db.one("SELECT name FROM businesses WHERE id = ? AND active = 1", (biz_id,))
-        return b["name"] if b else None
-
-    try:
-        res = telegram.handle_update(update, name_for)
-        if res:
-            telegram.call("sendMessage", chat_id=res[0], text=res[1])
-    except Exception:
-        db.rollback()
-    return {"ok": True}
