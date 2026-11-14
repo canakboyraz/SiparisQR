@@ -1,7 +1,7 @@
 {% extends "panel/layout.html" %}
 {% block ptitle %}Rapor{% endblock %}
 {% block content %}
-<div class="pn-head"><h1>Rapor</h1><span class="muted">{{ start.strftime('%d.%m.%Y') }} – {{ end.strftime('%d.%m.%Y') }}</span></div>
+<div class="pn-head"><h1>Rapor</h1><span class="pn-head-r"><span class="muted">{{ start.strftime('%d.%m.%Y') }} – {{ end.strftime('%d.%m.%Y') }}</span><a class="btn-sm" href="{{ url_for('panel.orders_cleanup') }}" title="Deneme siparişlerini sil">🗑 Deneme siparişlerini sil</a></span></div>
 <nav class="pn-seg is-scroll" aria-label="Dönem">
   {% for k, label in periods.items() %}<a href="{{ url_for('panel.reports', p=k) }}" class="{{ 'is-on' if key == k }}">{{ label }}</a>{% endfor %}
 </nav>

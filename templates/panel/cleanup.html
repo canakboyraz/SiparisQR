@@ -1,0 +1,43 @@
+{% extends "panel/layout.html" %}
+{% block ptitle %}Siparişleri sil{% endblock %}
+{% block content %}
+<div class="pn-head"><h1>Siparişleri sil</h1>
+  <span class="pn-head-r"><a class="btn-sm" href="{{ url_for('panel.orders') }}">← Siparişler</a></span></div>
+<p class="muted">Deneme siparişlerini temizlemek için. Silinen sipariş raporlardan, müşteri listesinden ve ödeme takibinden de kalkar; ayrılan stok ürüne geri eklenir, o siparişle kazanılan damga ve ödüller geri alınır. <b>Geri alınamaz.</b></p>
+
+{% if not rows %}
+<div class="pn-empty"><p><b>Silinecek sipariş yok.</b></p></div>
+{% else %}
+<form method="post" class="card cleanup" id="cleanup-form">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <div class="pay-head"><h2>Siparişler · {{ rows|length }}</h2>
+    <label class="cl-all"><input type="checkbox" id="cl-all"> Hepsini seç</label></div>
+  <ul class="cl-list">
+    {% for o in rows %}
+    <li><label>
+      <input type="checkbox" name="ids" value="{{ o.id }}">
+      <span><b>#{{ o.id }} · {{ o.customer_name }}</b><small>{{ local_time(o.created_at) }} · {{ STATUS[o.status] }}</small></span>
+      <b>{{ tl(o.total) }}</b>
+    </label></li>
+    {% endfor %}
+  </ul>
+  <label class="chk"><input type="checkbox" name="drop_customers" value="1" checked> Başka siparişi kalmayan müşteri kayıtlarını da sil</label>
+  <button class="btn-danger btn-big" name="action" value="selected" type="submit"
+          onclick="return confirm('Seçilen siparişler kalıcı olarak silinsin mi?')">Seçilenleri sil</button>
+</form>
+
+<form method="post" class="card cleanup">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <h2>Tüm siparişleri sil</h2>
+  <p class="muted">Denemeler bitti, gerçek siparişlere temiz başlamak istiyorsan. Ürünlerin, kampanyan ve ayarların silinmez.</p>
+  <label class="fld"><span>Onay için <b>SİL</b> yaz</span><input name="confirm" autocomplete="off" required placeholder="SİL"></label>
+  <label class="chk"><input type="checkbox" name="drop_customers" value="1" checked> Müşteri kayıtlarını da sil</label>
+  <button class="btn-danger btn-big" name="action" value="all" type="submit">{{ rows|length }} siparişin hepsini sil</button>
+</form>
+<script>
+document.getElementById('cl-all').addEventListener('change', function (e) {
+  document.querySelectorAll('#cleanup-form input[name=ids]').forEach(function (c) { c.checked = e.target.checked; });
+});
+</script>
+{% endif %}
+{% endblock %}

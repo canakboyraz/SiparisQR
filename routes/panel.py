@@ -157,6 +157,42 @@ def payment_add(order_id):
     return redirect(url_for("panel.order", order_id=order_id) + "#odeme")
 
 
+@bp.post("/orders/<int:order_id>/delete")
+@login_required
+def order_delete(order_id):
+    o = _order_or_404(order_id)
+    n, gone = core.delete_orders(g.biz["id"], [o["id"]], drop_customers=bool(request.form.get("drop_customer")))
+    flash(f"#{o['id']} numaralı sipariş silindi." + (" Başka siparişi olmayan müşteri kaydı da silindi." if gone else ""),
+          "ok")
+    return redirect(url_for("panel.orders", tab=request.form.get("tab") or "pending"))
+
+
+@bp.route("/orders/cleanup", methods=["GET", "POST"])
+@login_required
+def orders_cleanup():
+    bid = g.biz["id"]
+    if request.method == "POST":
+        drop = bool(request.form.get("drop_customers"))
+        if request.form.get("action") == "all":
+            if (request.form.get("confirm") or "").strip().upper().replace("I", "İ") != "SİL":
+                flash("Tüm siparişleri silmek için kutuya SİL yazman gerekiyor.", "error")
+                return redirect(url_for("panel.orders_cleanup"))
+            ids = [r["id"] for r in db.query("SELECT id FROM orders WHERE business_id = ?", (bid,))]
+        else:
+            ids = request.form.getlist("ids")
+            if not ids:
+                flash("Silinecek sipariş seçmedin.", "error")
+                return redirect(url_for("panel.orders_cleanup"))
+        n, gone = core.delete_orders(bid, ids, drop_customers=drop)
+        msg = f"{n} sipariş silindi."
+        if gone:
+            msg += f" Başka siparişi kalmayan {gone} müşteri kaydı da silindi."
+        flash(msg, "ok")
+        return redirect(url_for("panel.orders_cleanup"))
+    rows = db.query("SELECT * FROM orders WHERE business_id = ? ORDER BY id DESC LIMIT 500", (bid,))
+    return render_template("panel/cleanup.html", active="orders", rows=rows)
+
+
 @bp.post("/payments/<int:payment_id>/delete")
 @login_required
 def payment_delete(payment_id):

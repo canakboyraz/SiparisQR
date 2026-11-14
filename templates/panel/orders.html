@@ -3,7 +3,7 @@
 {% block content %}
 <div class="pn-head" id="orders" data-latest="{{ latest }}" data-poll="{{ url_for('panel.poll') }}">
   <h1>Siparişler</h1>
-  <span class="pn-head-r"><button type="button" class="btn-sm" id="kasa-btn">🔔 Sesli mod</button><a class="btn-sm" href="{{ url_for('panel.reports') }}">📊 Rapor</a><span class="pn-live" title="Sayfa kendiliğinden yenilenir"><i></i>Canlı</span></span>
+  <span class="pn-head-r"><button type="button" class="btn-sm" id="kasa-btn">🔔 Sesli mod</button><a class="btn-sm" href="{{ url_for('panel.reports') }}">📊 Rapor</a><a class="btn-sm" href="{{ url_for('panel.orders_cleanup') }}" title="Deneme siparişlerini sil">🗑 Sil</a><span class="pn-live" title="Sayfa kendiliğinden yenilenir"><i></i>Canlı</span></span>
 </div>
 {% if show_steps %}
 <section class="card steps-card" id="kurulum">

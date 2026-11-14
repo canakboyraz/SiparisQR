@@ -792,6 +792,53 @@ def add_payment(biz_id, order, amount, method, note="", user_id=None):
     return get_order(order["id"])
 
 
+def delete_orders(biz_id, order_ids, drop_customers=True):
+    """Siparişleri iz bırakmadan siler (deneme/test siparişleri için).
+
+    Ayrılan stok geri konur ve o siparişin stok hareketleri silinir; siparişle kazanılan ödüller silinir,
+    siparişte verilen ödüller tekrar 'bekliyor' olur; ödemeler, kart ödemeleri ve satırlar silinir.
+    drop_customers=True ise başka siparişi kalmayan müşteriler de (ödülleriyle) silinir.
+    Döner: (silinen sipariş sayısı, silinen müşteri sayısı).
+    """
+    ids = sorted({int(i) for i in order_ids if str(i).strip().isdigit()})
+    if not ids:
+        return 0, 0
+    marks = ",".join("?" for _ in ids)
+    rows = db.query(f"SELECT * FROM orders WHERE business_id = ? AND id IN ({marks})", (biz_id, *ids))
+    if not rows:
+        return 0, 0
+    ids = [o["id"] for o in rows]
+    marks = ",".join("?" for _ in ids)
+    customers = {o["customer_id"] for o in rows}
+    try:
+        for o in rows:
+            release_stock(o, "Silindi")
+            if o.get("referred_by"):
+                db.execute("UPDATE customers SET referred_by = NULL WHERE id = ? AND referred_by = ?",
+                           (o["customer_id"], o["referred_by"]))
+        db.execute(f"DELETE FROM stock_movements WHERE business_id = ? AND order_id IN ({marks})", (biz_id, *ids))
+        db.execute(f"DELETE FROM rewards WHERE business_id = ? AND earned_order_id IN ({marks})", (biz_id, *ids))
+        db.execute(f"UPDATE rewards SET status = 'earned', given_order_id = NULL, given_at = NULL "
+                   f"WHERE business_id = ? AND given_order_id IN ({marks})", (biz_id, *ids))
+        db.execute(f"DELETE FROM payments WHERE business_id = ? AND order_id IN ({marks})", (biz_id, *ids))
+        db.execute(f"DELETE FROM card_payments WHERE order_id IN ({marks})", ids)
+        db.execute(f"DELETE FROM order_lines WHERE order_id IN ({marks})", ids)
+        db.execute(f"DELETE FROM orders WHERE business_id = ? AND id IN ({marks})", (biz_id, *ids))
+        gone = 0
+        if drop_customers:
+            for cid in customers:
+                left = db.one("SELECT COUNT(*) AS n FROM orders WHERE customer_id = ?", (cid,))
+                if int(left["n"]) == 0:
+                    db.execute("DELETE FROM rewards WHERE customer_id = ?", (cid,))
+                    db.execute("UPDATE customers SET referred_by = NULL WHERE referred_by = ?", (cid,))
+                    gone += db.execute_rc("DELETE FROM customers WHERE id = ? AND business_id = ?", (cid, biz_id))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return len(ids), gone
+
+
 def delete_payment(biz_id, payment_id):
     p = db.one("SELECT * FROM payments WHERE id = ? AND business_id = ?", (payment_id, biz_id))
     if not p:

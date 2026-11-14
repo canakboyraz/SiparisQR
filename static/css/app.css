@@ -522,3 +522,14 @@ em.is-bad{font-style:normal;color:var(--bad);font-weight:700}
 .kasa-bar button{border:0;border-radius:9px;padding:6px 12px;background:rgba(255,255,255,.2);color:#fff;font-weight:700;cursor:pointer}
 @media(min-width:900px){.kasa-bar{bottom:16px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+/* Sipariş silme */
+.cleanup{display:flex;flex-direction:column;gap:12px}
+.cl-all{display:flex;align-items:center;gap:6px;font-size:14.5px}
+.cl-list{list-style:none;margin:0;padding:0;max-height:55vh;overflow:auto;border:1px solid #EEE;border-radius:12px}
+.cl-list li+li{border-top:1px solid #F0F0F0}
+.cl-list label{display:flex;align-items:center;gap:12px;padding:12px;cursor:pointer}
+.cl-list input,.chk input,.cl-all input{width:20px;height:20px;flex:none;accent-color:var(--accent)}
+.cl-list span{flex:1;display:flex;flex-direction:column;min-width:0}
+.cl-list small{color:var(--ink-2)}
+.chk{display:flex;align-items:center;gap:10px;font-size:15px}
+.danger-zone{border:1px solid #F3D2CE}

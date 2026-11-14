@@ -1154,3 +1154,47 @@ def test_telegram_removed(app):
     assert "Telegram" not in c.get("/panel/notifications").get_data(as_text=True)
     assert "Sesli kasa modu" in c.get("/panel/notifications").get_data(as_text=True)
     assert app.test_client().post("/telegram/webhook/x", json={}).status_code in (404, 405)
+
+
+def test_delete_orders(app):
+    c, biz, (p1, p2, p3), t = _owner(app)
+    db.update("products", p1, {"stock": 10})
+    db.commit()
+    r1 = order(c, "/s/ege-zeytin", [{"id": p1, "qty": 3}])
+    o1 = core.get_order(r1.get_json()["id"])
+    assert core.current_stock(p1) == 7
+    c.post(f"/panel/orders/{o1['id']}/status", data={"csrf": t, "status": "approved"})
+    c.post(f"/panel/orders/{o1['id']}/payments", data={"csrf": t, "full": "1", "method": "iban"})
+    r2 = order(c, "/s/ege-zeytin", [{"id": p1, "qty": 1}], phone="05559998877", name="Test Kişi")
+    o2 = core.get_order(r2.get_json()["id"])
+    r3 = order(c, "/s/ege-zeytin", [{"id": p1, "qty": 1}], phone="05559998877", name="Test Kişi")
+    o3 = core.get_order(r3.get_json()["id"])
+
+    # Tekli silme: stok geri gelir, ödeme ve stok hareketi kalmaz, müşteri (başka siparişi yok) silinir
+    page = c.get(f"/panel/orders/{o1['id']}").get_data(as_text=True)
+    assert "Siparişi sil" in page
+    c.post(f"/panel/orders/{o1['id']}/delete", data={"csrf": t, "drop_customer": "1"})
+    assert core.get_order(o1["id"]) is None
+    assert core.current_stock(p1) == 8
+    assert db.one("SELECT COUNT(*) AS n FROM payments WHERE order_id = ?", (o1["id"],))["n"] == 0
+    assert db.one("SELECT COUNT(*) AS n FROM stock_movements WHERE order_id = ?", (o1["id"],))["n"] == 0
+    assert db.one("SELECT * FROM customers WHERE id = ?", (o1["customer_id"],)) is None
+
+    # Toplu: seçili silme, müşterinin başka siparişi olduğu için müşteri kalır
+    page = c.get("/panel/orders/cleanup").get_data(as_text=True)
+    assert f"#{o2['id']}" in page and "SİL" in page
+    c.post("/panel/orders/cleanup", data={"csrf": t, "action": "selected", "ids": [o2["id"]], "drop_customers": "1"})
+    assert core.get_order(o2["id"]) is None and core.get_order(o3["id"])
+    assert db.one("SELECT * FROM customers WHERE id = ?", (o3["customer_id"],))
+
+    # Tümünü sil: onay yazılmazsa olmaz, başka işletmenin siparişine dokunmaz
+    r = c.post("/panel/orders/cleanup", data={"csrf": t, "action": "all", "confirm": "evet"}, follow_redirects=True)
+    assert "SİL yazman" in r.get_data(as_text=True) and core.get_order(o3["id"])
+    c.post("/panel/orders/cleanup", data={"csrf": t, "action": "all", "confirm": "sil", "drop_customers": "1"})
+    assert core.get_order(o3["id"]) is None
+    assert core.current_stock(p1) == 10
+    assert db.one("SELECT COUNT(*) AS n FROM customers WHERE business_id = ?", (biz["id"],))["n"] == 0
+    assert c.get("/panel/reports").status_code == 200
+
+    # Başka işletmenin siparişi bu işletmeden silinemez
+    assert c.post("/panel/orders/999999/delete", data={"csrf": t}).status_code == 404
