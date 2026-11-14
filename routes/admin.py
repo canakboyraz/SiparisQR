@@ -180,7 +180,32 @@ def platform():
         core.save_platform_settings(values)
         flash("Platform ayarları kaydedildi.", "ok")
         return redirect(url_for("admin.platform"))
-    return render_template("admin/settings.html", s=core.platform_settings())
+    import telegram
+    info = None
+    if telegram.enabled():
+        try:
+            info = telegram.webhook_info().get("result")
+        except Exception:
+            info = None
+    return render_template("admin/settings.html", s=core.platform_settings(), tg_enabled=telegram.enabled(),
+                           tg_info=info, tg_bot=telegram.bot_username())
+
+
+@bp.post("/telegram/setup")
+@admin_required
+def telegram_setup():
+    import telegram
+    from app import public_base
+    if not telegram.enabled():
+        flash("Önce Railway'de TELEGRAM_BOT_TOKEN ve TELEGRAM_BOT_USERNAME değişkenlerini eklemen gerekiyor.", "error")
+    else:
+        try:
+            res = telegram.set_webhook(public_base())
+            flash("Telegram webhook kuruldu. İşletmeler artık panelden bağlanabilir." if res.get("ok")
+                  else f"Telegram webhook kurulamadı: {res.get('description', 'bilinmeyen hata')}", "ok" if res.get("ok") else "error")
+        except Exception as e:
+            flash(f"Telegram'a ulaşılamadı: {e}", "error")
+    return redirect(url_for("admin.platform") + "#telegram")
 
 
 @bp.post("/demo")

@@ -68,6 +68,8 @@
       <label class="fld"><span>En az sipariş</span><input name="min_order" inputmode="decimal" value="{{ b.min_order|replace('.00', '') }}"><small>0 = yok</small></label>
     </div>
     <label class="fld"><span>Teslimat notu</span><input name="delivery_note" value="{{ b.delivery_note }}" maxlength="200" placeholder="ör. Kocaeli içi aynı gün, diğer iller 2-3 gün kargo"></label>
+    <label class="fld"><span>Stok azaldı uyarısı</span><input name="low_stock" type="number" min="0" max="1000" value="{{ b.low_stock if b.low_stock is not none else 3 }}">
+      <small>Stok takibi olan bir ürün bu adede ya da altına düşünce sana bildirim gelir (0 = uyarı yok).</small></label>
     <label class="fld"><span>Gel al adresi</span><input name="pickup_address" value="{{ b.pickup_address }}" maxlength="200" placeholder="ör. Dumlupınar Mah. ... No: 5"></label>
   </section>
   <button class="btn-primary btn-big" type="submit">Kaydet</button>

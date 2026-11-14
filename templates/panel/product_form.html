@@ -13,7 +13,8 @@
 </script>{% endblock %}
 {% block content %}
 <a class="pn-back" href="{{ url_for('panel.products') }}">← Ürünler</a>
-<h1>{{ 'Ürünü düzenle' if p and p.id else 'Yeni ürün' }}</h1>
+<div class="pn-head"><h1>{{ 'Ürünü düzenle' if p and p.id else 'Yeni ürün' }}</h1>
+  {% if p and p.id %}<a class="btn-sm" href="{{ url_for('panel.product_stock', product_id=p.id) }}">📦 Stok ve hareketler</a>{% endif %}</div>
 <form method="post" enctype="multipart/form-data" class="card form">
   <input type="hidden" name="csrf" value="{{ csrf_token() }}">
   <label class="fld"><span>Ürün adı</span><input name="name" value="{{ p.name if p else '' }}" maxlength="100" required placeholder="ör. Gemlik Siyah Zeytin"></label>

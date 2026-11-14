@@ -194,6 +194,28 @@ CREATE TABLE IF NOT EXISTS card_payments (
   reason TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS stock_movements (
+  id {pk},
+  business_id INTEGER NOT NULL,
+  product_id INTEGER NOT NULL,
+  variant_id INTEGER,
+  kind TEXT NOT NULL,
+  delta INTEGER NOT NULL,
+  balance INTEGER,
+  order_id INTEGER,
+  note TEXT NOT NULL DEFAULT '',
+  user_id INTEGER,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_stock_mov ON stock_movements (product_id, id);
+CREATE TABLE IF NOT EXISTS telegram_chats (
+  id {pk},
+  business_id INTEGER NOT NULL,
+  chat_id TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  UNIQUE (business_id, chat_id)
+);
 CREATE TABLE IF NOT EXISTS broadcasts (
   id {pk},
   business_id INTEGER NOT NULL,
@@ -252,6 +274,8 @@ MIGRATIONS = [
     ("businesses", "reward_max_per_order", "INTEGER NOT NULL DEFAULT 0"),
     # eski siparişler sipariş başına 1 damga sayılır
     ("orders", "stamps", "INTEGER NOT NULL DEFAULT 1"),
+    ("orders", "referrer_name", "TEXT NOT NULL DEFAULT ''"),
+    ("businesses", "low_stock", "INTEGER NOT NULL DEFAULT 3"),
     # 4. aşama: abonelik
     ("businesses", "plan", "TEXT NOT NULL DEFAULT 'trial'"),
     ("businesses", "paid_until", "TEXT"),

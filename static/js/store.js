@@ -265,7 +265,7 @@
     var body = {
       items: Object.keys(cart).map(function (k) { var it = parse(k); return { id: +it.pid, variant: it.vid ? +it.vid : null, qty: cart[k] }; }),
       name: el.name.value, phone: el.phone.value, address: el.address ? el.address.value : "",
-      note: el.note.value, payment: pay.value, fulfilment: fulfilment(), zone: el.zone ? el.zone.value : null,
+      note: el.note.value, referrer_name: el.referrer_name ? el.referrer_name.value : "", payment: pay.value, fulfilment: fulfilment(), zone: el.zone ? el.zone.value : null,
       ref: ref, marketing_ok: el.marketing_ok ? el.marketing_ok.checked : false,
       birth_day: el.birth_day ? el.birth_day.value : null, birth_month: el.birth_month ? el.birth_month.value : null
     };

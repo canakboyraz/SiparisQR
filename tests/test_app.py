@@ -1050,3 +1050,151 @@ def test_polite_customer_errors(app):
     assert "hatalı görünüyor" in e
     e = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}], name="").get_json()["error"]
     assert "eksik görünüyor" in e
+
+
+# ── Stok hareketleri ────────────────────────────────────────────────────────
+
+def test_stock_ledger(app):
+    c, biz, (p1, p2, _), t = _owner(app)
+    st = f"/panel/products/{p1}/stock"
+    assert c.get(st).status_code == 200
+    r = c.post(st, data={"csrf": t, "kind": "in", "qty": "20", "note": "Yeni parti"}, follow_redirects=True)
+    assert "Stok güncellendi: 20 adet" in r.get_data(as_text=True)
+    c.post(st, data={"csrf": t, "kind": "out", "qty": "2", "note": "Kırık kavanoz"})
+    assert core.current_stock(p1) == 18
+    # sipariş: 3 adet satış -> 15
+    o = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 3}]).get_json()
+    assert core.current_stock(p1) == 15
+    # red -> iade, 18
+    c.post(f"/panel/orders/{o['id']}/status", data={"csrf": t, "status": "rejected"})
+    assert core.current_stock(p1) == 18
+    # sayım: 10
+    c.post(st, data={"csrf": t, "kind": "set", "qty": "10", "note": "Ay sonu sayım"})
+    assert core.current_stock(p1) == 10
+    hist = core.stock_history(p1)
+    kinds = [(h["kind"], h["delta"], h["balance"]) for h in reversed(hist)]
+    assert kinds == [("in", 20, 20), ("out", -2, 18), ("sale", -3, 15), ("return", 3, 18), ("set", -8, 10)]
+    assert hist[2]["order_id"] == o["id"]
+    html = c.get(st).get_data(as_text=True)
+    for word in ("Stok girişi", "Stok çıkışı / fire", "Satış", "İade (red/iptal)", "Sayım", "Kırık kavanoz",
+                 f"Sipariş #{o['id']}", "Ay sonu sayım"):
+        assert word in html, word
+    # stoktan fazla düşülemez, takip kapalıyken çıkış yapılamaz
+    r = c.post(st, data={"csrf": t, "kind": "out", "qty": "50"}, follow_redirects=True)
+    assert "düşülemez" in r.get_data(as_text=True) and core.current_stock(p1) == 10
+    c.post(st, data={"csrf": t, "kind": "off"})
+    assert core.current_stock(p1) is None and core.stock_history(p1)[0]["kind"] == "off"
+    r = c.post(st, data={"csrf": t, "kind": "out", "qty": "1"}, follow_redirects=True)
+    assert "stok takibi kapalı" in r.get_data(as_text=True)
+    # başka işletme göremez
+    make_biz(app.test_client(), "Bal Evi", "bal-evi", "", "b@b.com")
+    c3 = app.test_client(); login(c3, "b@b.com", "sahip12345")
+    assert c3.get(st).status_code == 404
+
+
+def test_stock_ledger_variants_and_form(app):
+    c, biz, (p1, _, _), t = _owner(app)
+    c.post(f"/panel/products/{p1}", data={"csrf": t, "name": "Siyah Zeytin", "available": "1", "visible": "1",
+           "v_id": ["", ""], "v_name": ["500 g", "1 kg"], "v_price": ["200", "350"], "v_stock": ["5", ""]})
+    small, big = core.variants_by_product([p1])[p1]
+    h = core.stock_history(p1)
+    assert len(h) == 1 and h[0]["kind"] == "set" and h[0]["variant_id"] == small["id"] and h[0]["delta"] == 5
+    st = f"/panel/products/{p1}/stock"
+    r = c.post(st, data={"csrf": t, "kind": "in", "qty": "3"}, follow_redirects=True)
+    assert "seçenek seçer misin" in r.get_data(as_text=True)
+    c.post(st, data={"csrf": t, "kind": "in", "qty": "10", "variant_id": big["id"]})   # sınırsızdan takibe
+    assert core.current_stock(p1, big["id"]) == 10
+    order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "variant": small["id"], "qty": 2}])
+    hist = core.stock_history(p1)
+    assert hist[0]["kind"] == "sale" and hist[0]["variant_name"] == "500 g" and hist[0]["balance"] == 3
+    assert "500 g" in c.get(st).get_data(as_text=True)
+
+
+def test_low_stock_alert(app, monkeypatch):
+    c, biz, (p1, _, _), t = _owner(app)
+    c.post(f"/panel/products/{p1}/stock", data={"csrf": t, "kind": "set", "qty": "5"})
+    order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 3}])     # 2 kaldı, eşik 3
+    titles = [d["title"] for _, d in app.sent]
+    assert any("Stok azalıyor" in x for x in titles)
+    body = [d["body"] for _, d in app.sent if "Stok azalıyor" in d["title"]][0]
+    assert "Siyah Zeytin: 2 adet kaldı" in body
+
+
+# ── Telegram ────────────────────────────────────────────────────────────────
+
+def test_telegram_link_and_notify(app, monkeypatch):
+    import telegram
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:ABC")
+    monkeypatch.setenv("TELEGRAM_BOT_USERNAME", "SiparisQRBot")
+    calls = []
+    monkeypatch.setattr(telegram, "call", lambda method, session=None, **p: calls.append((method, p)) or {"ok": True})
+    c, biz, (p1, _, _), t = _owner(app)
+    html = c.get("/panel/notifications").get_data(as_text=True)
+    code = telegram.link_code(biz["id"])
+    assert f"https://t.me/SiparisQRBot?start={code}" in html and "sessiz" in html
+    # sahte/yanlış kod ve yanlış webhook gizli anahtarı
+    cl = app.test_client()
+    assert cl.post("/telegram/webhook/yanlis", json={}).status_code == 404
+    hook = f"/telegram/webhook/{telegram.webhook_secret()}"
+    cl.post(hook, json={"message": {"chat": {"id": 555, "first_name": "Ali"}, "text": f"/start b{biz['id']}_deadbeef00000000"}})
+    assert db.one("SELECT COUNT(*) AS n FROM telegram_chats")["n"] == 0
+    cl.post(hook, json={"message": {"chat": {"id": 555, "first_name": "Ali"}, "text": f"/start {code}"}})
+    assert db.one("SELECT chat_id FROM telegram_chats WHERE business_id = ?", (biz["id"],))["chat_id"] == "555"
+    assert calls[-1][0] == "sendMessage" and "Bağlandı" in calls[-1][1]["text"]
+    # sipariş bildirimi Telegram'a gider (arka plan yerine senkron)
+    monkeypatch.setattr(telegram, "send_to_business",
+                        lambda bid, text, url=None, background=True: _sync_send(telegram, bid, text, url))
+    order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 2}], referrer_name="Ayşe Hanım")
+    sent = [p for m, p in calls if m == "sendMessage" and p.get("chat_id") == "555"]
+    assert sent and "Yeni sipariş" in sent[-1]["text"] and "Referans: Ayşe Hanım" in sent[-1]["text"]
+    assert sent[-1]["reply_markup"]["inline_keyboard"][0][0]["url"].endswith("/panel/orders/1")
+    # /durdur
+    cl.post(hook, json={"message": {"chat": {"id": 555}, "text": "/durdur"}})
+    assert db.one("SELECT COUNT(*) AS n FROM telegram_chats")["n"] == 0
+
+
+def _sync_send(telegram, bid, text, url):
+    import telegram as tg
+    chats = db.query("SELECT * FROM telegram_chats WHERE business_id = ?", (bid,))
+    for ch in chats:
+        p = {"chat_id": ch["chat_id"], "text": text}
+        if url:
+            p["reply_markup"] = {"inline_keyboard": [[{"text": "Siparişi aç", "url": url}]]}
+        tg.call("sendMessage", **p)
+    return len(chats)
+
+
+def test_telegram_disabled_and_admin(app, monkeypatch):
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    c, biz, _, t = _owner(app)
+    assert "henüz platformda açılmadı" in c.get("/panel/notifications").get_data(as_text=True)
+    a = app.test_client(); login(a, "admin@x.com", "adminpass123")
+    assert "@BotFather" in a.get("/admin/settings").get_data(as_text=True)
+
+
+# ── Referans adı + kasa modu ────────────────────────────────────────────────
+
+def test_referrer_name(app):
+    c, biz, (p1, _, _), t = _owner(app)
+    for name in ("Ayşe Hanım", "  ayşe   hanım ", "Mehmet"):
+        r = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}], referrer_name=name).get_json()
+        c.post(f"/panel/orders/{r['id']}/status", data={"csrf": t, "status": "approved"})
+    o = core.get_order(r["id"])
+    assert o["referrer_name"] == "Mehmet"
+    assert core.get_order(1)["referrer_name"] == "Ayşe Hanım"
+    assert "Bizi kim önerdi?" in c.get("/s/ege-zeytin/").get_data(as_text=True)
+    page = c.get("/panel/orders/1").get_data(as_text=True)
+    assert "Referans" in page and "Ayşe Hanım" in page
+    rep = c.get("/panel/reports?p=today").get_data(as_text=True)
+    assert "Referanslar" in rep and "2 sipariş" in rep           # büyük/küçük harf ve boşluk birleşir
+    long = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}], referrer_name="x" * 200).get_json()
+    assert len(core.get_order(long["id"])["referrer_name"]) == 60
+
+
+def test_kasa_mode_markup_and_poll(app):
+    c, biz, (p1, _, _), t = _owner(app)
+    html = c.get("/panel/orders?kasa=1").get_data(as_text=True)
+    assert 'id="kasa-gate"' in html and 'id="kasa-alert"' in html and "Gördüm" in html
+    order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}])
+    j = c.get("/panel/orders/poll").get_json()
+    assert j["latest"] == 1 and j["last"]["name"] == "Ayşe Yılmaz" and j["last"]["total"] == "400 TL"

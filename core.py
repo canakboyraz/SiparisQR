@@ -468,6 +468,7 @@ def create_order(biz, data):
         if extra:
             db.update("customers", cust_id, extra)
         # Stok ayır (yarış durumuna karşı koşullu güncelleme)
+        sold = []
         for ln in lines:
             if not ln["_tracked"]:
                 continue
@@ -475,6 +476,7 @@ def create_order(biz, data):
             if db.execute_rc(f"UPDATE {table} SET stock = stock - ? WHERE id = ? AND stock >= ?",
                              (ln["qty"], rid, ln["qty"])) != 1:
                 raise OrderError(f"Üzgünüz, {ln['name']} az önce tükendi. Sepetini güncelleyip tekrar dener misin?")
+            sold.append(ln)
         ts = now()
         order_id = db.insert("orders", {
             "business_id": biz["id"], "customer_id": cust_id, "token": secrets.token_urlsafe(16),
@@ -486,10 +488,14 @@ def create_order(biz, data):
             "zone_name": zone["name"] if zone else "", "referred_by": referrer_id,
             "stock_reserved": 1 if any(ln["_tracked"] for ln in lines) else 0,
             "counts_for_reward": 0, "created_at": ts, "updated_at": ts,
+            "referrer_name": " ".join(str(data.get("referrer_name") or "").split())[:60],
         })
         for ln in lines:
             ln = {k: v for k, v in ln.items() if not k.startswith("_")}
             db.insert("order_lines", {"order_id": order_id, **ln})
+        for ln in sold:
+            _log_stock(biz["id"], ln["product_id"], ln["variant_id"], "sale", -ln["qty"], order_id=order_id,
+                       note=f"{name} · sipariş #{order_id}")
         db.commit()
     except Exception:
         db.rollback()
@@ -497,17 +503,101 @@ def create_order(biz, data):
     return get_order(order_id)
 
 
-def release_stock(order):
+def release_stock(order, reason="İade"):
     if not order.get("stock_reserved"):
         return
     for ln in order_lines(order["id"]):
         if ln["variant_id"]:
-            db.execute("UPDATE product_variants SET stock = stock + ? WHERE id = ? AND stock IS NOT NULL",
-                       (ln["qty"], ln["variant_id"]))
+            n = db.execute_rc("UPDATE product_variants SET stock = stock + ? WHERE id = ? AND stock IS NOT NULL",
+                              (ln["qty"], ln["variant_id"]))
         elif ln["product_id"]:
-            db.execute("UPDATE products SET stock = stock + ? WHERE id = ? AND stock IS NOT NULL",
-                       (ln["qty"], ln["product_id"]))
+            n = db.execute_rc("UPDATE products SET stock = stock + ? WHERE id = ? AND stock IS NOT NULL",
+                              (ln["qty"], ln["product_id"]))
+        else:
+            n = 0
+        if n:
+            _log_stock(order["business_id"], ln["product_id"], ln["variant_id"], "return", ln["qty"],
+                       order_id=order["id"], note=f"{reason} · sipariş #{order['id']}")
     db.update("orders", order["id"], {"stock_reserved": 0})
+
+
+# ── Stok hareketleri ────────────────────────────────────────────────────────
+
+STOCK_KINDS = {"in": "Stok girişi", "out": "Stok çıkışı / fire", "set": "Sayım", "sale": "Satış",
+               "return": "İade (red/iptal)", "off": "Takip kapatıldı", "on": "Takip başladı"}
+
+
+def current_stock(product_id, variant_id=None):
+    if variant_id:
+        r = db.one("SELECT stock FROM product_variants WHERE id = ?", (variant_id,))
+    else:
+        r = db.one("SELECT stock FROM products WHERE id = ?", (product_id,))
+    return None if not r else r["stock"]
+
+
+def _log_stock(biz_id, product_id, variant_id, kind, delta, order_id=None, note="", user_id=None):
+    db.insert("stock_movements", {"business_id": biz_id, "product_id": product_id, "variant_id": variant_id,
+                                  "kind": kind, "delta": int(delta), "balance": current_stock(product_id, variant_id),
+                                  "order_id": order_id, "note": (note or "")[:200], "user_id": user_id,
+                                  "created_at": now()})
+
+
+def adjust_stock(biz_id, product_id, variant_id, kind, qty, note="", user_id=None):
+    """Elle stok işlemi. kind: in (+qty), out (-qty), set (= qty), off (sınırsız yap). Döner: yeni stok."""
+    table, rid = ("product_variants", variant_id) if variant_id else ("products", product_id)
+    row = db.one(f"SELECT stock FROM {table} WHERE id = ? AND business_id = ?", (rid, biz_id))
+    if row is None:
+        raise OrderError("Ürün bulunamadı.")
+    old = row["stock"]
+    if kind == "off":
+        if old is None:
+            return None
+        db.execute(f"UPDATE {table} SET stock = NULL WHERE id = ?", (rid,))
+        _log_stock(biz_id, product_id, variant_id, "off", 0, note=note or "Sınırsız stoğa geçildi", user_id=user_id)
+        db.commit()
+        return None
+    try:
+        qty = int(qty)
+    except (TypeError, ValueError):
+        raise OrderError("Adet anlaşılamadı, tam sayı olarak yazar mısın?") from None
+    if qty < 0 or qty > 1_000_000 or (kind in ("in", "out") and qty == 0):
+        raise OrderError("Adet 1 ile 1.000.000 arasında olmalı, kontrol eder misin?")
+    if kind == "in":
+        new = (old or 0) + qty
+    elif kind == "out":
+        if old is None:
+            raise OrderError("Bu üründe stok takibi kapalı. Önce sayım yaparak stok girebilirsin.")
+        if qty > old:
+            raise OrderError(f"Stokta {old} adet var; {qty} adet düşülemez.")
+        new = old - qty
+    elif kind == "set":
+        new = qty
+    else:
+        raise OrderError("İşlem türü anlaşılamadı.")
+    delta = new - (old or 0)
+    db.execute(f"UPDATE {table} SET stock = ? WHERE id = ?", (new, rid))
+    _log_stock(biz_id, product_id, variant_id, kind, delta, note=note, user_id=user_id)
+    db.commit()
+    return new
+
+
+def stock_history(product_id, limit=200):
+    return db.query("SELECT m.*, v.name AS variant_name FROM stock_movements m "
+                    "LEFT JOIN product_variants v ON v.id = m.variant_id "
+                    "WHERE m.product_id = ? ORDER BY m.id DESC LIMIT " + str(int(limit)), (product_id,))
+
+
+def low_stock_after_sale(biz, order):
+    """Siparişten sonra eşik altına düşen kalemler: [(ad, kalan)]"""
+    limit = int(biz.get("low_stock") or 0)
+    if limit <= 0:
+        return []
+    out = []
+    for ln in order_lines(order["id"]):
+        left = current_stock(ln["product_id"], ln["variant_id"]) if ln["product_id"] else None
+        if left is not None and left <= limit:
+            out.append((f"{ln['name']} ({ln['unit']})" if ln["variant_id"] and ln["unit"] else ln["name"], left))
+    return out
 
 
 def get_order(order_id):
@@ -590,7 +680,7 @@ def set_status(biz, order, new_status, reason="", message=None):
             changes["counts_for_reward"] = 1 if changes["stamps"] > 0 else 0
         if new_status in ("rejected", "cancelled"):
             changes["reject_reason"] = (reason or "").strip()[:300]
-            release_stock(order)
+            release_stock(order, "Reddedildi" if new_status == "rejected" else "İptal edildi")
         if new_status == "cancelled":
             changes["counts_for_reward"] = 0
             db.execute("DELETE FROM rewards WHERE earned_order_id = ? AND status = 'earned'", (order["id"],))

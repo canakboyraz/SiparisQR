@@ -3,7 +3,7 @@
 {% block content %}
 <div class="pn-head" id="orders" data-latest="{{ latest }}" data-poll="{{ url_for('panel.poll') }}">
   <h1>Siparişler</h1>
-  <span class="pn-head-r"><a class="btn-sm" href="{{ url_for('panel.reports') }}">📊 Rapor</a><span class="pn-live" title="Sayfa kendiliğinden yenilenir"><i></i>Canlı</span></span>
+  <span class="pn-head-r"><button type="button" class="btn-sm" id="kasa-btn">🔔 Sesli mod</button><a class="btn-sm" href="{{ url_for('panel.reports') }}">📊 Rapor</a><span class="pn-live" title="Sayfa kendiliğinden yenilenir"><i></i>Canlı</span></span>
 </div>
 {% if show_steps %}
 <section class="card steps-card" id="kurulum">
@@ -34,7 +34,7 @@
       <div class="ol-main">
         <b>#{{ o.id }} · {{ o.customer_name }}</b>
         <span>{{ FULFILMENT[o.fulfilment] }} · {{ PAYMENT[o.payment] }}</span>
-        <small>{{ local_time(o.created_at) }}{% if o.customer_id in has_reward %} · <span class="tag-gift">🎁 ödülü var</span>{% endif %}</small>
+        <small>{{ local_time(o.created_at) }}{% if o.customer_id in has_reward %} · <span class="tag-gift">🎁 ödülü var</span>{% endif %}{% if o.referrer_name %} · 👤 {{ o.referrer_name }}{% endif %}</small>
       </div>
       <div class="ol-side">
         <b>{{ tl(o.total) }}</b>
@@ -46,4 +46,13 @@
   {% endfor %}
 </ul>
 {% endif %}
+<div class="kasa-gate" id="kasa-gate" hidden>
+  <button type="button" id="kasa-start"><b>🔔 Sesli kasa modunu başlat</b><small>Sesin açılması için bir kez dokun. Ekran açık kalır; yeni siparişte "Gördüm" diyene kadar çalar.</small></button>
+</div>
+<div class="kasa-alert" id="kasa-alert" hidden role="alertdialog" aria-live="assertive">
+  <div><p>🛒 Yeni sipariş</p><h2 id="kasa-title"></h2><p id="kasa-sub"></p>
+    <button type="button" class="btn-primary btn-big" id="kasa-ok">Gördüm</button>
+    <a class="btn-ghost btn-big" id="kasa-open" href="#">Siparişi aç</a></div>
+</div>
+<div class="kasa-bar" id="kasa-bar" hidden>🔔 Sesli kasa modu açık · ekran açık kalır <button type="button" id="kasa-stop">Kapat</button></div>
 {% endblock %}

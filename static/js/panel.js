@@ -97,31 +97,90 @@
     refresh();
   }
 
-  // ── Sipariş listesi: canlı yenileme + ses ──
+  // ── Sipariş listesi: canlı yenileme + ses + sesli kasa modu ──
   var list = $("orders");
   if (list) {
     var latest = +list.getAttribute("data-latest"), url = list.getAttribute("data-poll");
-    var ding = function () {
+    var ctx = null, kasa = false, alarm = null, wake = null, timer = null;
+    function ensureCtx() {
       try {
-        var ctx = new (window.AudioContext || window.webkitAudioContext)();
-        [0, 0.18].forEach(function (t) {
-          var o = ctx.createOscillator(), g = ctx.createGain();
-          o.frequency.value = 880; o.connect(g); g.connect(ctx.destination);
-          g.gain.setValueAtTime(0.0001, ctx.currentTime + t);
-          g.gain.exponentialRampToValueAtTime(0.25, ctx.currentTime + t + 0.02);
-          g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + 0.16);
-          o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.17);
-        });
+        if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+        if (ctx.state === "suspended") ctx.resume();
       } catch (e) {}
-    };
-    setInterval(function () {
-      if (document.hidden) return;
+      return ctx;
+    }
+    function chime(loud) {
+      var c = ensureCtx(); if (!c) return;
+      var notes = loud ? [880, 1175, 1568, 1175, 1568] : [880, 1175];
+      notes.forEach(function (f, i) {
+        var t = c.currentTime + i * 0.16, o = c.createOscillator(), g = c.createGain();
+        o.type = "square"; o.frequency.value = f; o.connect(g); g.connect(c.destination);
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(loud ? 0.5 : 0.25, t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+        o.start(t); o.stop(t + 0.15);
+      });
+    }
+    function keepAwake() {
+      if (!("wakeLock" in navigator) || !kasa) return;
+      navigator.wakeLock.request("screen").then(function (w) { wake = w; }).catch(function () {});
+    }
+    function setKasa(on) {
+      kasa = on;
+      try { if (on) localStorage.setItem("kasa", "1"); else localStorage.removeItem("kasa"); } catch (e) {}
+      $("kasa-bar").hidden = !on; $("kasa-gate").hidden = true;
+      $("kasa-btn").classList.toggle("is-on", on);
+      $("kasa-btn").textContent = on ? "🔔 Sesli mod açık" : "🔔 Sesli mod";
+      if (on) { keepAwake(); chime(false); } else if (wake) { wake.release(); wake = null; }
+      schedule();
+    }
+    function refreshList() {
+      return fetch(location.href, { cache: "no-store" }).then(function (r) { return r.text(); }).then(function (html) {
+        var doc = new DOMParser().parseFromString(html, "text/html");
+        var cur = document.querySelector(".pn-main"), nxt = doc.querySelector(".pn-main");
+        if (!cur || !nxt) return;
+        ["#kasa-gate", "#kasa-alert", "#kasa-bar"].forEach(function (sel) { var n = nxt.querySelector(sel); if (n) n.remove(); });
+        var keep = ["kasa-gate", "kasa-alert", "kasa-bar"].map(function (id) { return $(id); });
+        cur.innerHTML = nxt.innerHTML;
+        keep.forEach(function (el) { cur.appendChild(el); });
+        list = $("orders");
+        var btn = $("kasa-btn");
+        if (btn) { btn.classList.toggle("is-on", kasa); btn.textContent = kasa ? "🔔 Sesli mod açık" : "🔔 Sesli mod"; btn.onclick = onKasaBtn; }
+        document.querySelectorAll(".pn-tabs .badge, .pn-side .badge").forEach(function (b) { b.remove(); });
+      }).catch(function () {});
+    }
+    function ring(last) {
+      $("kasa-title").textContent = last ? "#" + last.id + " · " + last.total : "";
+      $("kasa-sub").textContent = last ? last.name : "";
+      $("kasa-open").href = last ? "/panel/orders/" + last.id : "/panel/orders";
+      $("kasa-alert").hidden = false;
+      clearInterval(alarm);
+      chime(true);
+      alarm = setInterval(function () { chime(true); if (navigator.vibrate) navigator.vibrate([300, 150, 300]); }, 2200);
+    }
+    $("kasa-ok").addEventListener("click", function () {
+      clearInterval(alarm); alarm = null; $("kasa-alert").hidden = true; refreshList();
+    });
+    function poll() {
+      if (document.hidden && !kasa) return;
       fetch(url, { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
         if (!d || d.latest <= latest) return;
-        latest = d.latest; ding();
+        latest = d.latest;
+        if (kasa) { ring(d.last); return; }
+        chime(false);
         if (/tab=(active|done)/.test(location.search)) { $("pn-new").hidden = false; }
         else location.reload();
       }).catch(function () {});
-    }, 15000);
+    }
+    function schedule() { clearInterval(timer); timer = setInterval(poll, kasa ? 8000 : 15000); }
+    function onKasaBtn() { if (kasa) setKasa(false); else { ensureCtx(); setKasa(true); } }
+    $("kasa-btn").onclick = onKasaBtn;
+    $("kasa-start").addEventListener("click", function () { ensureCtx(); setKasa(true); });
+    $("kasa-stop").addEventListener("click", function () { setKasa(false); });
+    document.addEventListener("visibilitychange", function () { if (!document.hidden && kasa) { keepAwake(); poll(); } });
+    var want = /[?&]kasa=1/.test(location.search);
+    try { want = want || localStorage.getItem("kasa") === "1"; } catch (e) {}
+    if (want) $("kasa-gate").hidden = false;     // ses için bir dokunuş gerekir (iPhone kuralı)
+    schedule();
   }
 })();

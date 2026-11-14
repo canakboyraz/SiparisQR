@@ -1,0 +1,61 @@
+{% extends "panel/layout.html" %}
+{% block ptitle %}Stok · {{ p.name }}{% endblock %}
+{% block content %}
+<a class="pn-back" href="{{ url_for('panel.products') }}#p{{ p.id }}">← Ürünler</a>
+<div class="pn-head"><h1>{{ p.name }}</h1><a class="btn-sm" href="{{ url_for('panel.product_form', product_id=p.id) }}">Ürünü düzenle</a></div>
+
+<section class="stock-now">
+  {% if variants %}
+    {% for v in variants %}
+    <div class="card {{ 'is-low' if v.stock is not none and v.stock <= biz.low_stock }}"><span>{{ v.name }}</span><b>{{ '∞' if v.stock is none else v.stock }}</b><small>{{ 'sınırsız' if v.stock is none else 'adet' }}</small></div>
+    {% endfor %}
+  {% else %}
+    <div class="card {{ 'is-low' if p.stock is not none and p.stock <= biz.low_stock }}"><span>Şu anki stok</span><b>{{ '∞' if p.stock is none else p.stock }}</b><small>{{ 'sınırsız (takip kapalı)' if p.stock is none else 'adet' }}</small></div>
+  {% endif %}
+  <div class="card"><span>Son 30 gün satış</span><b>{{ sold_30 }}</b><small>adet</small></div>
+</section>
+
+<form method="post" class="card form" id="stok-islem">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <h2>Stok işlemi</h2>
+  {% if variants %}
+  <label class="fld"><span>Seçenek</span><select name="variant_id" required><option value="">Seç</option>
+    {% for v in variants %}<option value="{{ v.id }}">{{ v.name }} ({{ 'sınırsız' if v.stock is none else v.stock ~ ' adet' }})</option>{% endfor %}</select></label>
+  {% endif %}
+  <fieldset class="seg seg-mode">
+    <legend>Ne yapmak istiyorsun?</legend>
+    <label><input type="radio" name="kind" value="in" checked><span>Stok ekle<small>mal geldi (+)</small></span></label>
+    <label><input type="radio" name="kind" value="out"><span>Stok düş<small>fire, kayıp (−)</small></span></label>
+    <label><input type="radio" name="kind" value="set"><span>Sayım<small>elimde tam X var</small></span></label>
+  </fieldset>
+  <div class="row2">
+    <label class="fld"><span>Adet</span><input name="qty" type="number" min="0" max="1000000" inputmode="numeric" required placeholder="ör. 20"></label>
+    <label class="fld"><span>Not <small>(isteğe bağlı)</small></span><input name="note" maxlength="200" placeholder="ör. Ayvalık'tan yeni parti"></label>
+  </div>
+  <button class="btn-primary btn-big" type="submit">Kaydet</button>
+  <details class="pay-add"><summary>Stok takibini kapat</summary>
+    <p class="muted">Ürün sınırsız satılır, stok düşmez. Geçmiş kayıtlar silinmez.</p>
+    <button class="btn-ghost" type="submit" name="kind" value="off" formnovalidate onclick="var q=this.form.qty;q.required=false;">Sınırsız yap</button>
+  </details>
+</form>
+
+<section class="card">
+  <h2>Stok hareketleri</h2>
+  {% if not history %}<p class="muted">Henüz hareket yok. Yukarıdan stok girdiğinde ve sipariş geldikçe burada listelenir.</p>{% endif %}
+  <ul class="mv-list">
+    {% for m in history %}
+    <li class="is-{{ m.kind }}">
+      <div class="mv-main">
+        <b>{{ KINDS.get(m.kind, m.kind) }}{% if m.variant_name %} · {{ m.variant_name }}{% endif %}</b>
+        <small>{{ local_time(m.created_at) }}{% if m.order_id %} · <a href="{{ url_for('panel.order', order_id=m.order_id) }}">Sipariş #{{ m.order_id }}</a>{% endif %}</small>
+        {% if m.note and not (m.order_id and m.note.endswith('#' ~ m.order_id)) %}<small class="mv-note">{{ m.note }}</small>{% elif m.order_id and m.note %}<small>{{ m.note.split(' · ')[0] }}</small>{% endif %}
+      </div>
+      <div class="mv-side">
+        <b class="{{ 'is-ok' if m.delta > 0 else ('is-bad' if m.delta < 0 else '') }}">{% if m.kind == 'off' %}∞{% else %}{{ '+' if m.delta > 0 }}{{ m.delta }}{% endif %}</b>
+        <small>kalan {{ '∞' if m.balance is none else m.balance }}</small>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}

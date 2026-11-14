@@ -96,6 +96,7 @@
   <dl class="kv">
     <div><dt>Ad</dt><dd>{{ o.customer_name }}{% if previous %} <small class="muted">· {{ previous }} önceki sipariş</small>{% else %} <small class="tag-new">ilk sipariş</small>{% endif %}</dd></div>
     <div><dt>Telefon</dt><dd><a href="tel:+90{{ o.customer_phone }}">{{ pretty_phone(o.customer_phone) }}</a> · <a href="https://wa.me/90{{ o.customer_phone }}" rel="noopener">WhatsApp</a></dd></div>
+    {% if o.referrer_name %}<div><dt>Referans</dt><dd><b>{{ o.referrer_name }}</b> <small class="muted">önerdi</small></dd></div>{% endif %}
     <div><dt>Teslimat</dt><dd>{{ FULFILMENT[o.fulfilment] }}</dd></div>
     {% if o.address %}<div><dt>Adres</dt><dd>{{ o.address }}<br><a href="https://www.google.com/maps/search/?api=1&query={{ o.address|urlencode }}" rel="noopener">Haritada aç</a></dd></div>{% endif %}
     {% if card and card.active %}<div><dt>Kampanya</dt><dd>{{ card.filled }} / {{ card.every }} damga · ödüle {{ card.left }} {{ 'damga' if card.mode == 'amount' else card.unit }}{% if o.counts_for_reward and o.status in ('approved','on_the_way','delivered') %} · bu sipariş <b>+{{ o.stamps }}</b>{% endif %}</dd></div>{% endif %}

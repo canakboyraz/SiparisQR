@@ -32,6 +32,13 @@
 </section>
 
 <section class="card">
+  <h2>Referanslar <small class="muted">· "Bizi kim önerdi?"</small></h2>
+  {% if refs %}
+  <ol class="top">{% for r in refs %}<li><span>{{ r.name }}</span><small>{{ r.n }} sipariş</small><b>{{ tl(from_cents(r.cents)) }}</b></li>{% endfor %}</ol>
+  {% else %}<p class="muted">Bu dönemde referans yazılan sipariş yok.</p>{% endif %}
+</section>
+
+<section class="card">
   <h2>Kampanyaların etkisi</h2>
   <dl class="kv">
     <div><dt>Damga ödülü</dt><dd>{{ s.rewards.get('stamp', 0) }} ödül kazanıldı</dd></div>

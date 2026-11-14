@@ -8,7 +8,8 @@ from PIL import Image, ImageOps
 import core
 import db
 import webpush
-from app import current_user, login_required, platform_name, public_order_url, public_store_url, push_subject
+from app import (current_user, login_required, notify_owner, platform_name, public_order_url, public_store_url,
+                 push_subject)
 
 bp = Blueprint("panel", __name__, url_prefix="/panel")
 
@@ -73,7 +74,9 @@ def orders():
 @login_required
 def poll():
     latest = db.one("SELECT MAX(id) AS m FROM orders WHERE business_id = ?", (g.biz["id"],))
-    resp = jsonify(latest=int(latest["m"] or 0), counts=_counts(g.biz["id"]))
+    last = db.one("SELECT id, customer_name, total FROM orders WHERE id = ?", (latest["m"],)) if latest["m"] else None
+    resp = jsonify(latest=int(latest["m"] or 0), counts=_counts(g.biz["id"]),
+                   last={"id": last["id"], "name": last["customer_name"], "total": core.tl(last["total"])} if last else None)
     resp.headers["Cache-Control"] = "no-store"
     return resp
 
@@ -349,17 +352,31 @@ def _variants_from_form(f):
     return out
 
 
+def _log_form_stock(product_id, variant_id, old, new):
+    if old == new:
+        return
+    uid = current_user()["id"]
+    if new is None:
+        core._log_stock(g.biz["id"], product_id, variant_id, "off", 0, note="Ürün formundan: sınırsız", user_id=uid)
+    else:
+        core._log_stock(g.biz["id"], product_id, variant_id, "set", new - (old or 0), note="Ürün formundan", user_id=uid)
+
+
 def _save_variants(product_id, variants):
-    existing = {v["id"] for v in db.query("SELECT id FROM product_variants WHERE product_id = ?", (product_id,))}
+    rows = {v["id"]: v for v in db.query("SELECT id, stock FROM product_variants WHERE product_id = ?", (product_id,))}
+    existing = set(rows)
     keep = set()
     for pos, v in enumerate(variants):
         if v["id"] in existing:
             db.update("product_variants", v["id"], {"name": v["name"], "price": v["price"], "stock": v["stock"],
                                                     "position": pos})
             keep.add(v["id"])
+            _log_form_stock(product_id, v["id"], rows[v["id"]]["stock"], v["stock"])
         else:
-            db.insert("product_variants", {"business_id": g.biz["id"], "product_id": product_id, "name": v["name"],
-                                           "price": v["price"], "stock": v["stock"], "position": pos})
+            vid = db.insert("product_variants", {"business_id": g.biz["id"], "product_id": product_id, "name": v["name"],
+                                                 "price": v["price"], "stock": v["stock"], "position": pos})
+            if v["stock"] is not None:
+                _log_form_stock(product_id, vid, None, v["stock"])
     for vid in existing - keep:
         db.execute("DELETE FROM product_variants WHERE id = ?", (vid,))
 
@@ -403,12 +420,17 @@ def product_form(product_id=None):
             elif f.get("remove_photo"):
                 values["image_id"] = None
             if p:
+                old_stock = db.one("SELECT stock FROM products WHERE id = ?", (p["id"],))["stock"]
                 db.update("products", p["id"], values)
                 pid = p["id"]
+                if not new_variants:
+                    _log_form_stock(pid, None, old_stock, values["stock"])
             else:
                 pos = db.one("SELECT COALESCE(MAX(position), 0) AS m FROM products WHERE business_id = ?", (g.biz["id"],))
                 pid = db.insert("products", {"business_id": g.biz["id"], "position": int(pos["m"]) + 1,
                                              "created_at": core.now(), **values})
+                if values["stock"] is not None:
+                    _log_form_stock(pid, None, None, values["stock"])
             _save_variants(pid, new_variants)
             db.commit()
             flash("Ürün kaydedildi.", "ok")
@@ -423,6 +445,41 @@ def product_form(product_id=None):
                     for i, n, pr, st in zip(f.getlist("v_id"), f.getlist("v_name"), f.getlist("v_price"), f.getlist("v_stock"))
                     if n or pr]
     return render_template("panel/product_form.html", active="products", p=p, cats=cats, variants=variants)
+
+
+@bp.route("/products/<int:product_id>/stock", methods=["GET", "POST"])
+@login_required
+def product_stock(product_id):
+    p = db.one("SELECT * FROM products WHERE id = ? AND business_id = ?", (product_id, g.biz["id"]))
+    if not p:
+        abort(404)
+    variants = core.variants_by_product([p["id"]]).get(p["id"], [])
+    if request.method == "POST":
+        f = request.form
+        vid = f.get("variant_id", type=int) or None
+        if variants and vid not in {v["id"] for v in variants}:
+            flash("Önce bir seçenek seçer misin?", "error")
+        elif not variants and vid:
+            abort(400)
+        else:
+            try:
+                new = core.adjust_stock(g.biz["id"], p["id"], vid, f.get("kind"), f.get("qty"),
+                                        (f.get("note") or "").strip()[:200], current_user()["id"])
+                label = next((v["name"] for v in variants if v["id"] == vid), "")
+                flash(f"Stok güncellendi{(' · ' + label) if label else ''}: "
+                      f"{'sınırsız' if new is None else str(new) + ' adet'}.", "ok")
+                return redirect(url_for("panel.product_stock", product_id=p["id"]))
+            except core.OrderError as e:
+                db.rollback()
+                flash(str(e), "error")
+    p = db.one("SELECT * FROM products WHERE id = ?", (p["id"],))
+    variants = core.variants_by_product([p["id"]]).get(p["id"], [])
+    history = core.stock_history(p["id"])
+    sold_30 = db.one("SELECT COALESCE(-SUM(delta), 0) AS n FROM stock_movements WHERE product_id = ? AND kind = 'sale' "
+                     "AND created_at >= ?", (p["id"], (core.datetime.now(core.timezone.utc) - core.timedelta(days=30))
+                                             .strftime("%Y-%m-%dT%H:%M:%SZ")))
+    return render_template("panel/stock.html", active="products", p=p, variants=variants, history=history,
+                           KINDS=core.STOCK_KINDS, sold_30=int(sold_30["n"]))
 
 
 @bp.post("/products/<int:product_id>/toggle")
@@ -658,6 +715,8 @@ def settings():
             "delivery_note": (f.get("delivery_note") or "").strip()[:200],
             "pickup_address": (f.get("pickup_address") or "").strip()[:200],
         }
+        raw_low = (f.get("low_stock") or "").strip()
+        v["low_stock"] = min(int(raw_low), 1000) if raw_low.isdigit() else int(b["low_stock"] or 0)
         v["instagram"] = (f.get("instagram") or "").strip().lstrip("@")[:60]
         v["pay_card"] = 1 if (f.get("pay_card") and core.card_payments_enabled()) else 0
         v["paytr_test"] = 1 if f.get("paytr_test") else 0
@@ -770,9 +829,21 @@ def qr_print():
 @bp.get("/notifications")
 @login_required
 def notifications():
+    import telegram
     subs = db.query("SELECT * FROM push_subscriptions WHERE business_id = ? ORDER BY id DESC", (g.biz["id"],))
-    return render_template("panel/notifications.html", active="notifications", subs=subs,
+    tg = db.query("SELECT * FROM telegram_chats WHERE business_id = ? ORDER BY id DESC", (g.biz["id"],))
+    return render_template("panel/notifications.html", active="notifications", subs=subs, tg_chats=tg,
+                           tg_enabled=telegram.enabled(), tg_link=telegram.deep_link(g.biz["id"]) if telegram.enabled() else None,
                            vapid=webpush.vapid_public_key_b64())
+
+
+@bp.post("/telegram/remove")
+@login_required
+def telegram_remove():
+    db.execute("DELETE FROM telegram_chats WHERE id = ? AND business_id = ?", (request.form.get("id", type=int), g.biz["id"]))
+    db.commit()
+    flash("Telegram bağlantısı kaldırıldı.", "ok")
+    return redirect(url_for("panel.notifications"))
 
 
 @bp.post("/push/subscribe")
@@ -817,9 +888,8 @@ def push_unsubscribe():
 @bp.post("/push/test")
 @login_required
 def push_test():
-    n = webpush.notify_business(g.biz["id"], {
-        "title": "Deneme bildirimi", "body": "Bildirimler çalışıyor. Yeni sipariş gelince böyle haber vereceğiz.",
-        "url": "/panel/orders", "tag": "test"}, push_subject())
+    n = notify_owner(g.biz["id"], "🔔 Deneme bildirimi",
+                     "Bildirimler çalışıyor. Yeni sipariş gelince böyle haber vereceğiz.", "/panel/orders", tag="test")
     if request.is_json:
         return jsonify(ok=bool(n), devices=n)
     flash(f"{n} cihaza deneme bildirimi gönderildi." if n else "Henüz kayıtlı cihaz yok. Önce bu cihazda bildirimleri açabilirsin.",
@@ -913,6 +983,15 @@ def reports():
             by_day[k]["cents"] += core.cents(o["total"])
             by_day[k]["n"] += 1
     peak = max([x["cents"] for x in days] or [0]) or 1
+    refs = {}
+    for o in good:
+        nm = " ".join((o["referrer_name"] or "").split())
+        if nm:
+            k = nm.casefold()
+            r = refs.setdefault(k, {"name": nm, "n": 0, "cents": 0})
+            r["n"] += 1
+            r["cents"] += core.cents(o["total"])
+    refs = sorted(refs.values(), key=lambda x: (-x["n"], -x["cents"]))[:15]
     rewards = db.query("SELECT kind, COUNT(*) AS n FROM rewards WHERE business_id = ? AND created_at >= ? "
                        "AND created_at < ? GROUP BY kind", (bid, s_iso, e_iso))
     stats = {
@@ -929,7 +1008,7 @@ def reports():
         "first": sum(1 for o in good if core.money(o["discount"]) > 0),
         "rewards": {r["kind"]: int(r["n"]) for r in rewards},
     }
-    return render_template("panel/reports.html", active="reports", key=key, periods=PERIODS, s=stats, top=top,
+    return render_template("panel/reports.html", active="reports", key=key, periods=PERIODS, s=stats, top=top, refs=refs,
                            days=days, peak=peak, start=start, end=end - timedelta(days=1), KIND_LABEL=core.KIND_LABEL)
 
 

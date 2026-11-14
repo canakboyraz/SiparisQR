@@ -6,7 +6,7 @@ from flask import Blueprint, Response, abort, g, jsonify, render_template, reque
 import core
 import db
 import webpush
-from app import public_store_url, push_subject, rate_limited, store_base
+from app import notify_owner, public_store_url, push_subject, rate_limited, store_base
 
 bp = Blueprint("store", __name__)
 
@@ -87,12 +87,19 @@ def _place(biz):
         order = core.create_order(biz, data)
     except core.OrderError as e:
         return jsonify(ok=False, error=str(e)), 400
-    n_lines = len(core.order_lines(order["id"]))
-    webpush.notify_business(biz["id"], {
-        "title": f"Yeni sipariş #{order['id']} · {core.tl(order['total'])}",
-        "body": f"{order['customer_name']} · {n_lines} kalem · {core.PAYMENT[order['payment']]}. Onay bekliyor.",
-        "url": f"/panel/orders/{order['id']}", "tag": f"order{order['id']}",
-    }, push_subject())
+    lines = core.order_lines(order["id"])
+    items = ", ".join(f"{l['qty']}× {l['name']}" + (f" ({l['unit']})" if l["unit"] else "") for l in lines[:4])
+    if len(lines) > 4:
+        items += f" +{len(lines) - 4} kalem"
+    body = f"{order['customer_name']} · {core.PAYMENT[order['payment']]}\n{items}"
+    if order["referrer_name"]:
+        body += f"\nReferans: {order['referrer_name']}"
+    notify_owner(biz["id"], f"🛒 Yeni sipariş #{order['id']} · {core.tl(order['total'])}", body + "\nOnay bekliyor.",
+                 f"/panel/orders/{order['id']}", tag=f"order{order['id']}")
+    low = core.low_stock_after_sale(biz, order)
+    if low:
+        notify_owner(biz["id"], "📦 Stok azalıyor", "\n".join(f"{n}: {k} adet kaldı" for n, k in low),
+                     "/panel/products", tag="stok")
     resp = {"ok": True, "id": order["id"], "url": f"{g.base}/o/{order['token']}"}
     if order["payment"] == "card":
         resp["pay_url"] = f"{g.base}/pay/{order['token']}"
@@ -258,11 +265,33 @@ def paytr_callback():
         db.execute("UPDATE card_payments SET status = 'success' WHERE id = ?", (cp["id"],))
         db.commit()
         core.add_payment(biz["id"], order, str(core.from_cents(cp["amount_cents"])), "card", "PayTR ile kartla ödendi")
-        webpush.notify_business(biz["id"], {
-            "title": f"💳 Kartla ödendi · #{order['id']}", "body": f"{order['customer_name']} {core.tl(core.from_cents(cp['amount_cents']))} ödedi.",
-            "url": f"/panel/orders/{order['id']}", "tag": f"pay{order['id']}"}, push_subject())
+        notify_owner(biz["id"], f"💳 Kartla ödendi · #{order['id']}",
+                     f"{order['customer_name']} {core.tl(core.from_cents(cp['amount_cents']))} ödedi.",
+                     f"/panel/orders/{order['id']}", tag=f"pay{order['id']}")
     else:
         db.execute("UPDATE card_payments SET status = 'failed', reason = ? WHERE id = ?",
                    ((f.get("failed_reason_msg") or f.get("status") or "")[:300], cp["id"]))
         db.commit()
     return "OK"
+
+
+
+@bp.post("/telegram/webhook/<secret>")
+def telegram_webhook(secret):
+    import hmac as _hmac
+    import telegram
+    if not telegram.enabled() or not _hmac.compare_digest(secret, telegram.webhook_secret()):
+        abort(404)
+    update = request.get_json(silent=True) or {}
+
+    def name_for(biz_id):
+        b = db.one("SELECT name FROM businesses WHERE id = ? AND active = 1", (biz_id,))
+        return b["name"] if b else None
+
+    try:
+        res = telegram.handle_update(update, name_for)
+        if res:
+            telegram.call("sendMessage", chat_id=res[0], text=res[1])
+    except Exception:
+        db.rollback()
+    return {"ok": True}

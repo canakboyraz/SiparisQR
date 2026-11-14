@@ -131,6 +131,14 @@ def public_order_url(biz, order):
     return f"{public_base()}/s/{biz['slug']}/o/{order['token']}"
 
 
+def notify_owner(biz_id, title, body, path, tag=None):
+    """İşletmeye haber ver: telefon bildirimi (Web Push) + Telegram (sesli)."""
+    import telegram
+    n = webpush.notify_business(biz_id, {"title": title, "body": body, "url": path, "tag": tag}, push_subject())
+    n += telegram.send_to_business(biz_id, f"{title}\n{body}", public_base() + path)
+    return n
+
+
 def push_subject():
     return "mailto:" + os.environ.get("PUSH_CONTACT_EMAIL", os.environ.get("ADMIN_EMAIL", "admin@example.com"))
 

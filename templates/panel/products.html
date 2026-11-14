@@ -23,6 +23,7 @@
         <form method="post" action="{{ url_for('panel.product_toggle', product_id=p.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}">
           {% set ok = product_available(p, vmap.get(p.id)) %}
           <button class="chip {{ 'is-on' if ok else 'is-off' }}" type="submit" title="Satışa aç / kapat">{{ 'Satışta' if ok else ('Stok yok' if p.available else 'Kapalı') }}</button></form>
+        <a class="chip is-stock" href="{{ url_for('panel.product_stock', product_id=p.id) }}" title="Stok ve hareketler">Stok</a>
         <form method="post" action="{{ url_for('panel.product_move', product_id=p.id) }}" class="mv"><input type="hidden" name="csrf" value="{{ csrf_token() }}">
           <button name="dir" value="up" type="submit" aria-label="Yukarı taşı">↑</button><button name="dir" value="down" type="submit" aria-label="Aşağı taşı">↓</button></form>
       </div>
