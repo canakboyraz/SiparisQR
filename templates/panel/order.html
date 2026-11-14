@@ -203,7 +203,7 @@
 {% endif %}
 <section class="card danger-zone" id="sil">
   <h2>Siparişi sil</h2>
-  <p class="muted">Deneme siparişiyse sil: raporlardan ve ödeme takibinden kalkar, stok geri eklenir, bu siparişle kazanılan damga/ödül geri alınır. Geri alınamaz.</p>
+  <p class="muted">Deneme siparişiyse sil: raporlardan ve ödeme takibinden kalkar, stok geri eklenir (ürünün Stok sayfasında "Silindi · sipariş #{{ o.id }}" satırı olarak görünür), bu siparişle kazanılan damga/ödül geri alınır. Geri alınamaz.</p>
   <form method="post" action="{{ url_for('panel.order_delete', order_id=o.id) }}" onsubmit="return confirm('#{{ o.id }} numaralı sipariş kalıcı olarak silinsin mi?')">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <label class="chk"><input type="checkbox" name="drop_customer" value="1" checked> Başka siparişi yoksa müşteri kaydını da sil</label>

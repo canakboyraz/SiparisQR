@@ -161,9 +161,10 @@ def payment_add(order_id):
 @login_required
 def order_delete(order_id):
     o = _order_or_404(order_id)
-    n, gone = core.delete_orders(g.biz["id"], [o["id"]], drop_customers=bool(request.form.get("drop_customer")))
-    flash(f"#{o['id']} numaralı sipariş silindi." + (" Başka siparişi olmayan müşteri kaydı da silindi." if gone else ""),
-          "ok")
+    n, gone, restored = core.delete_orders(g.biz["id"], [o["id"]],
+                                           drop_customers=bool(request.form.get("drop_customer")))
+    flash(f"#{o['id']} numaralı sipariş silindi." + core.stock_note(restored)
+          + (" Başka siparişi olmayan müşteri kaydı da silindi." if gone else ""), "ok")
     return redirect(url_for("panel.orders", tab=request.form.get("tab") or "pending"))
 
 
@@ -183,8 +184,8 @@ def orders_cleanup():
             if not ids:
                 flash("Silinecek sipariş seçmedin.", "error")
                 return redirect(url_for("panel.orders_cleanup"))
-        n, gone = core.delete_orders(bid, ids, drop_customers=drop)
-        msg = f"{n} sipariş silindi."
+        n, gone, restored = core.delete_orders(bid, ids, drop_customers=drop)
+        msg = f"{n} sipariş silindi." + core.stock_note(restored)
         if gone:
             msg += f" Başka siparişi kalmayan {gone} müşteri kaydı da silindi."
         flash(msg, "ok")

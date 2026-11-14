@@ -3,7 +3,7 @@
 {% block content %}
 <div class="pn-head"><h1>Siparişleri sil</h1>
   <span class="pn-head-r"><a class="btn-sm" href="{{ url_for('panel.orders') }}">← Siparişler</a></span></div>
-<p class="muted">Deneme siparişlerini temizlemek için. Silinen sipariş raporlardan, müşteri listesinden ve ödeme takibinden de kalkar; ayrılan stok ürüne geri eklenir, o siparişle kazanılan damga ve ödüller geri alınır. <b>Geri alınamaz.</b></p>
+<p class="muted">Deneme siparişlerini temizlemek için. Silinen sipariş raporlardan, müşteri listesinden ve ödeme takibinden de kalkar; ayrılan stok ürüne geri eklenir (ürünün Stok sayfasında "Silindi · sipariş #N" satırı olarak görünür), o siparişle kazanılan damga ve ödüller geri alınır. <b>Geri alınamaz.</b></p>
 
 {% if not rows %}
 <div class="pn-empty"><p><b>Silinecek sipariş yok.</b></p></div>

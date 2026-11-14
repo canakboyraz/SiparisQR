@@ -504,8 +504,10 @@ def create_order(biz, data):
 
 
 def release_stock(order, reason="İade"):
+    """Siparişin ayırdığı stoğu geri koyar. Döner: [(ürün adı, adet), ...] geri eklenenler."""
+    back = []
     if not order.get("stock_reserved"):
-        return
+        return back
     for ln in order_lines(order["id"]):
         if ln["variant_id"]:
             n = db.execute_rc("UPDATE product_variants SET stock = stock + ? WHERE id = ? AND stock IS NOT NULL",
@@ -518,7 +520,9 @@ def release_stock(order, reason="İade"):
         if n:
             _log_stock(order["business_id"], ln["product_id"], ln["variant_id"], "return", ln["qty"],
                        order_id=order["id"], note=f"{reason} · sipariş #{order['id']}")
+            back.append((ln["name"], int(ln["qty"])))
     db.update("orders", order["id"], {"stock_reserved": 0})
+    return back
 
 
 # ── Stok hareketleri ────────────────────────────────────────────────────────
@@ -795,28 +799,32 @@ def add_payment(biz_id, order, amount, method, note="", user_id=None):
 def delete_orders(biz_id, order_ids, drop_customers=True):
     """Siparişleri iz bırakmadan siler (deneme/test siparişleri için).
 
-    Ayrılan stok geri konur ve o siparişin stok hareketleri silinir; siparişle kazanılan ödüller silinir,
-    siparişte verilen ödüller tekrar 'bekliyor' olur; ödemeler, kart ödemeleri ve satırlar silinir.
-    drop_customers=True ise başka siparişi kalmayan müşteriler de (ödülleriyle) silinir.
-    Döner: (silinen sipariş sayısı, silinen müşteri sayısı).
+    Ayrılan stok geri konur; stok geçmişinde satış ve "Silindi · sipariş #N" iade satırı görünür kalır.
+    Siparişle kazanılan ödüller silinir, siparişte verilen ödüller tekrar 'bekliyor' olur; ödemeler,
+    kart ödemeleri ve satırlar silinir. drop_customers=True ise başka siparişi kalmayan müşteriler de silinir.
+    Döner: (silinen sipariş sayısı, silinen müşteri sayısı, {ürün adı: geri eklenen adet}).
     """
     ids = sorted({int(i) for i in order_ids if str(i).strip().isdigit()})
     if not ids:
-        return 0, 0
+        return 0, 0, {}
     marks = ",".join("?" for _ in ids)
     rows = db.query(f"SELECT * FROM orders WHERE business_id = ? AND id IN ({marks})", (biz_id, *ids))
     if not rows:
-        return 0, 0
+        return 0, 0, {}
     ids = [o["id"] for o in rows]
     marks = ",".join("?" for _ in ids)
     customers = {o["customer_id"] for o in rows}
+    restored = {}
     try:
         for o in rows:
-            release_stock(o, "Silindi")
+            for name, qty in release_stock(o, "Silindi"):
+                restored[name] = restored.get(name, 0) + qty
             if o.get("referred_by"):
                 db.execute("UPDATE customers SET referred_by = NULL WHERE id = ? AND referred_by = ?",
                            (o["customer_id"], o["referred_by"]))
-        db.execute(f"DELETE FROM stock_movements WHERE business_id = ? AND order_id IN ({marks})", (biz_id, *ids))
+        # Stok geçmişi silinmez (sayım tutsun); sadece silinen siparişe bağlantı kopar.
+        db.execute(f"UPDATE stock_movements SET order_id = NULL WHERE business_id = ? AND order_id IN ({marks})",
+                   (biz_id, *ids))
         db.execute(f"DELETE FROM rewards WHERE business_id = ? AND earned_order_id IN ({marks})", (biz_id, *ids))
         db.execute(f"UPDATE rewards SET status = 'earned', given_order_id = NULL, given_at = NULL "
                    f"WHERE business_id = ? AND given_order_id IN ({marks})", (biz_id, *ids))
@@ -836,7 +844,14 @@ def delete_orders(biz_id, order_ids, drop_customers=True):
     except Exception:
         db.rollback()
         raise
-    return len(ids), gone
+    return len(ids), gone, restored
+
+
+def stock_note(restored):
+    """Flash mesajı için: 'Stoğa geri eklendi: Siyah Zeytin +3, Zeytinyağı +1.'"""
+    if not restored:
+        return ""
+    return " Stoğa geri eklendi: " + ", ".join(f"{k} +{v}" for k, v in restored.items()) + "."
 
 
 def delete_payment(biz_id, payment_id):

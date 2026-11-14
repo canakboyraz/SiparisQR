@@ -1173,11 +1173,13 @@ def test_delete_orders(app):
     # Tekli silme: stok geri gelir, ödeme ve stok hareketi kalmaz, müşteri (başka siparişi yok) silinir
     page = c.get(f"/panel/orders/{o1['id']}").get_data(as_text=True)
     assert "Siparişi sil" in page
-    c.post(f"/panel/orders/{o1['id']}/delete", data={"csrf": t, "drop_customer": "1"})
+    r = c.post(f"/panel/orders/{o1['id']}/delete", data={"csrf": t, "drop_customer": "1"}, follow_redirects=True)
+    assert "Stoğa geri eklendi: Siyah Zeytin +3" in r.get_data(as_text=True)
     assert core.get_order(o1["id"]) is None
     assert core.current_stock(p1) == 8
     assert db.one("SELECT COUNT(*) AS n FROM payments WHERE order_id = ?", (o1["id"],))["n"] == 0
-    assert db.one("SELECT COUNT(*) AS n FROM stock_movements WHERE order_id = ?", (o1["id"],))["n"] == 0
+    hist = c.get(f"/panel/products/{p1}/stock").get_data(as_text=True)
+    assert f"Silindi · sipariş #{o1['id']}" in hist
     assert db.one("SELECT * FROM customers WHERE id = ?", (o1["customer_id"],)) is None
 
     # Toplu: seçili silme, müşterinin başka siparişi olduğu için müşteri kalır
