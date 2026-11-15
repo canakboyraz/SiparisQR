@@ -1,10 +1,40 @@
 {% extends "panel/layout.html" %}
 {% block ptitle %}Rapor{% endblock %}
 {% block content %}
-<div class="pn-head"><h1>Rapor</h1><span class="pn-head-r"><span class="muted">{{ start.strftime('%d.%m.%Y') }} – {{ end.strftime('%d.%m.%Y') }}</span><a class="btn-sm" href="{{ url_for('panel.orders_cleanup') }}" title="Deneme siparişlerini sil">🗑 Deneme siparişlerini sil</a></span></div>
+<div class="pn-head"><h1>Rapor</h1><span class="pn-head-r"><span class="muted">{{ start.strftime('%d.%m.%Y') }} – {{ end.strftime('%d.%m.%Y') }}</span><a class="btn-sm" href="{{ url_for('panel.orders_cleanup') }}" title="Deneme siparişlerini sil">🗑 Sipariş sil</a></span></div>
 <nav class="pn-seg is-scroll" aria-label="Dönem">
   {% for k, label in periods.items() %}<a href="{{ url_for('panel.reports', p=k) }}" class="{{ 'is-on' if key == k }}">{{ label }}</a>{% endfor %}
 </nav>
+
+<section class="card stock-card" id="stok">
+  <div class="pay-head"><h2>Stok durumu</h2><a class="btn-link" href="{{ url_for('panel.products') }}">Ürünler</a></div>
+  {% if stock %}
+  <div class="stk-sum">
+    <span><b>{{ stock_sum.tracked }}</b> takipte</span>
+    <span class="{{ 'is-low' if stock_sum.low }}"><b>{{ stock_sum.low }}</b> azaldı</span>
+    <span class="{{ 'is-out' if stock_sum.out }}"><b>{{ stock_sum.out }}</b> tükendi</span>
+    <span><b>{{ stock_sum.units }}</b> adet elde</span>
+  </div>
+  <p class="muted"><small>Yeni adedi yazıp ✓'ye bas; sayım olarak kaydedilir ve ürünün stok geçmişine düşer. Kutuyu boş bırakırsan stok takibi kapanır (sınırsız). "Satılan" seçili dönemdeki satıştır.</small></p>
+  <ul class="stk">
+    {% for r in stock %}{% for it in r["items"] %}
+    <li class="stk-{{ it.state }}">
+      <div class="stk-name">
+        <b>{{ r.p.name }}{% if it.name %} <em>· {{ it.name }}</em>{% endif %}</b>
+        <small>{% if it.state == 'out' %}<span class="pill is-rejected">Tükendi</span> {% elif it.state == 'low' %}<span class="pill is-pending">Azaldı</span> {% elif it.state == 'free' %}Sınırsız · {% endif %}{% if r.hidden %}gizli · {% endif %}Satılan: {{ it.sold }} · <a href="{{ url_for('panel.product_stock', product_id=r.p.id) }}">geçmiş</a></small>
+      </div>
+      <form method="post" action="{{ url_for('panel.stock_quick') }}" class="stk-form">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <input type="hidden" name="product_id" value="{{ r.p.id }}">{% if it.vid %}<input type="hidden" name="variant_id" value="{{ it.vid }}">{% endif %}
+        <input type="hidden" name="p" value="{{ key }}">
+        <input name="qty" type="number" inputmode="numeric" min="0" max="1000000" step="1" value="{{ '' if it.stock is none else it.stock }}" placeholder="∞" aria-label="{{ r.p.name }} {{ it.name }} stok adedi">
+        <button class="btn-sm" type="submit" aria-label="Kaydet">✓</button>
+      </form>
+    </li>
+    {% endfor %}{% endfor %}
+  </ul>
+  {% else %}<p class="muted">Henüz ürün yok. <a href="{{ url_for('panel.product_form') }}">Ürün ekle</a></p>{% endif %}
+</section>
 
 <section class="kpi">
   <div class="card"><span>Ciro</span><b>{{ tl(s.revenue) }}</b><small>{{ s.orders }} sipariş</small></div>

@@ -533,3 +533,16 @@ em.is-bad{font-style:normal;color:var(--bad);font-weight:700}
 .cl-list small{color:var(--ink-2)}
 .chk{display:flex;align-items:center;gap:10px;font-size:15px}
 .danger-zone{border:1px solid #F3D2CE}
+/* Rapor · stok durumu */
+.stk-sum{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 8px}
+.stk-sum span{background:var(--tint);color:var(--ink-2);border-radius:999px;padding:6px 12px;font-size:14px}
+.stk-sum span.is-low{background:#FFF4DC;color:#8A5A00}.stk-sum span.is-out{background:#FCE9E7;color:var(--bad)}
+.stk{list-style:none;margin:0;padding:0}
+.stk li{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid #F0EEE8}
+.stk li.stk-out .stk-name>b{color:var(--bad)}
+.stk-name{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.stk-name b{overflow-wrap:anywhere}.stk-name em{font-style:normal;font-weight:500;color:var(--ink-2)}
+.stk-name small{color:var(--ink-3);font-size:13px}
+.stk-form{display:flex;gap:6px;flex:none}
+.stk-form input[name=qty]{width:84px;min-height:42px;text-align:center;font-size:16px;border:1px solid #DDD;border-radius:10px;background:#fff}
+.stk-form .btn-sm{min-width:44px;min-height:42px}

@@ -1033,8 +1033,82 @@ def reports():
         "first": sum(1 for o in good if core.money(o["discount"]) > 0),
         "rewards": {r["kind"]: int(r["n"]) for r in rewards},
     }
+    stock, stock_sum = _stock_overview(bid, s_iso, e_iso)
     return render_template("panel/reports.html", active="reports", key=key, periods=PERIODS, s=stats, top=top, refs=refs,
-                           days=days, peak=peak, start=start, end=end - timedelta(days=1), KIND_LABEL=core.KIND_LABEL)
+                           days=days, peak=peak, start=start, end=end - timedelta(days=1), KIND_LABEL=core.KIND_LABEL,
+                           stock=stock, stock_sum=stock_sum)
+
+
+def _stock_overview(bid, s_iso, e_iso):
+    """Rapordaki stok tablosu: her ürün (ve seçenekleri) için güncel stok + dönemde satılan adet."""
+    low = int(g.biz.get("low_stock") or 0)
+    products = db.query("SELECT p.*, c.name AS cat FROM products p LEFT JOIN categories c ON c.id = p.category_id "
+                        "WHERE p.business_id = ? ORDER BY COALESCE(c.position, 9999), p.position, p.id", (bid,))
+    variants = core.variants_by_product([p["id"] for p in products])
+    sold = {}
+    for r in db.query("SELECT product_id, variant_id, COALESCE(-SUM(delta), 0) AS n FROM stock_movements "
+                      "WHERE business_id = ? AND kind = 'sale' AND created_at >= ? AND created_at < ? "
+                      "GROUP BY product_id, variant_id", (bid, s_iso, e_iso)):
+        sold[(r["product_id"], r["variant_id"])] = int(r["n"])
+
+    def state(st):
+        if st is None:
+            return "free"
+        if st <= 0:
+            return "out"
+        return "low" if low and st <= low else "ok"
+
+    rows, summ = [], {"tracked": 0, "low": 0, "out": 0, "units": 0}
+    for p in products:
+        vs = variants.get(p["id"], [])
+        items = [{"pid": p["id"], "vid": v["id"], "name": v["name"], "stock": v["stock"], "state": state(v["stock"]),
+                  "sold": sold.get((p["id"], v["id"]), 0)} for v in vs]
+        if not vs:
+            items = [{"pid": p["id"], "vid": None, "name": "", "stock": p["stock"], "state": state(p["stock"]),
+                      "sold": sold.get((p["id"], None), 0)}]
+        for it in items:
+            if it["stock"] is not None:
+                summ["tracked"] += 1
+                summ["units"] += max(int(it["stock"]), 0)
+            if it["state"] in ("low", "out"):
+                summ[it["state"]] += 1
+        rows.append({"p": p, "items": items, "hidden": not p["available"]})
+    # Tükenen / azalan önce görünsün
+    order = {"out": 0, "low": 1, "ok": 2, "free": 3}
+    rows.sort(key=lambda r: min(order[i["state"]] for i in r["items"]))
+    return rows, summ
+
+
+@bp.post("/stock/quick")
+@login_required
+def stock_quick():
+    """Rapordaki stok tablosundan hızlı düzenleme: yeni adet yazılır (sayım), boş = sınırsız."""
+    f = request.form
+    p = db.one("SELECT * FROM products WHERE id = ? AND business_id = ?", (f.get("product_id", type=int), g.biz["id"]))
+    if not p:
+        abort(404)
+    vid = f.get("variant_id", type=int) or None
+    vs = {v["id"]: v for v in core.variants_by_product([p["id"]]).get(p["id"], [])}
+    if (vs and vid not in vs) or (not vs and vid):
+        abort(400)
+    raw = (f.get("qty") or "").strip()
+    old = vs[vid]["stock"] if vid else p["stock"]
+    label = p["name"] + (f" · {vs[vid]['name']}" if vid else "")
+    try:
+        if raw == "":
+            if old is not None:
+                core.adjust_stock(g.biz["id"], p["id"], vid, "off", 0, "Rapordan: sınırsız", current_user()["id"])
+                flash(f"{label}: stok takibi kapatıldı (sınırsız).", "ok")
+        else:
+            if not raw.isdigit():
+                raise core.OrderError(f"{label} için adet anlaşılamadı, tam sayı yazar mısın? (ör. 25)")
+            if old is None or int(raw) != int(old):
+                new = core.adjust_stock(g.biz["id"], p["id"], vid, "set", raw, "Rapordan sayım", current_user()["id"])
+                flash(f"{label}: stok {'' if old is None else str(old) + ' → '}{new} adet.", "ok")
+    except core.OrderError as e:
+        db.rollback()
+        flash(str(e), "error")
+    return redirect(url_for("panel.reports", p=f.get("p") or "30") + "#stok")
 
 
 # ── Teslimat bölgeleri ──────────────────────────────────────────────────────

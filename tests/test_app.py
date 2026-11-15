@@ -1200,3 +1200,27 @@ def test_delete_orders(app):
 
     # Başka işletmenin siparişi bu işletmeden silinemez
     assert c.post("/panel/orders/999999/delete", data={"csrf": t}).status_code == 404
+
+
+def test_report_stock_overview(app):
+    c, biz, (p1, p2, p3), t = _owner(app)
+    db.update("products", p1, {"stock": 10})
+    db.update("businesses", biz["id"], {"low_stock": 3})
+    db.commit()
+    order(c, "/s/ege-zeytin", [{"id": p1, "qty": 8}])
+    page = c.get("/panel/reports").get_data(as_text=True)
+    assert page.index("Stok durumu") < page.index("Ciro")
+    assert "Siyah Zeytin" in page and "Azaldı" in page and "Satılan: 8" in page and "Zeytinyağı" in page
+    # Sayım: 2 -> 15
+    r = c.post("/panel/stock/quick", data={"csrf": t, "product_id": p1, "qty": "15", "p": "7"}, follow_redirects=True)
+    assert core.current_stock(p1) == 15 and "2 → 15" in r.get_data(as_text=True)
+    assert "Rapordan sayım" in c.get(f"/panel/products/{p1}/stock").get_data(as_text=True)
+    # Sınırsız ürüne stok girme, boş = sınırsız
+    c.post("/panel/stock/quick", data={"csrf": t, "product_id": p2, "qty": "4"})
+    assert core.current_stock(p2) == 4
+    c.post("/panel/stock/quick", data={"csrf": t, "product_id": p2, "qty": ""})
+    assert core.current_stock(p2) is None
+    # Hatalı giriş ve başka işletme ürünü
+    r = c.post("/panel/stock/quick", data={"csrf": t, "product_id": p1, "qty": "abc"}, follow_redirects=True)
+    assert "anlaşılamadı" in r.get_data(as_text=True) and core.current_stock(p1) == 15
+    assert c.post("/panel/stock/quick", data={"csrf": t, "product_id": 99999, "qty": "1"}).status_code == 404
