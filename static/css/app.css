@@ -510,18 +510,13 @@ em.is-bad{font-style:normal;color:var(--bad);font-weight:700}
 .chip.is-stock{background:#E3EEF9;color:#1F5C99;text-decoration:none}
 /* Sesli kasa modu */
 #kasa-btn.is-on{background:var(--ok);color:#fff}
-.kasa-gate,.kasa-alert{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(15,18,16,.55)}
-.kasa-gate button{display:flex;flex-direction:column;gap:8px;max-width:420px;padding:28px 22px;border:0;border-radius:24px;background:#fff;text-align:center;cursor:pointer}
-.kasa-gate b{font-size:21px}.kasa-gate small{color:var(--ink-2);font-size:15px}
+.kasa-alert{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(15,18,16,.55)}
 .kasa-alert{background:rgba(179,38,30,.92);animation:flash 1.1s infinite}
 .kasa-alert>div{width:100%;max-width:420px;padding:26px 22px;border-radius:24px;background:#fff;text-align:center;display:flex;flex-direction:column;gap:10px}
 .kasa-alert p{margin:0;color:var(--ink-2);font-weight:650}
 .kasa-alert h2{font-size:30px;margin:0}
 @keyframes flash{50%{background:rgba(179,38,30,.75)}}
-.kasa-bar{position:fixed;left:12px;right:12px;bottom:calc(76px + env(safe-area-inset-bottom));z-index:31;display:flex;align-items:center;justify-content:space-between;gap:10px;max-width:560px;margin:0 auto;padding:10px 14px;border-radius:14px;background:var(--ok);color:#fff;font-weight:650;font-size:14px}
-.kasa-bar button{border:0;border-radius:9px;padding:6px 12px;background:rgba(255,255,255,.2);color:#fff;font-weight:700;cursor:pointer}
-@media(min-width:900px){.kasa-bar{bottom:16px}}
-@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+@media(min-width:900px){@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 /* Sipariş silme */
 .cleanup{display:flex;flex-direction:column;gap:12px}
 .cl-all{display:flex;align-items:center;gap:6px;font-size:14.5px}

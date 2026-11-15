@@ -1142,7 +1142,7 @@ def test_referrer_name(app):
 def test_kasa_mode_markup_and_poll(app):
     c, biz, (p1, _, _), t = _owner(app)
     html = c.get("/panel/orders?kasa=1").get_data(as_text=True)
-    assert 'id="kasa-gate"' in html and 'id="kasa-alert"' in html and "Gördüm" in html
+    assert 'id="kasa-gate"' not in html and 'id="kasa-bar"' not in html and 'id="kasa-alert"' in html and "Gördüm" in html
     order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 1}])
     j = c.get("/panel/orders/poll").get_json()
     assert j["latest"] == 1 and j["last"]["name"] == "Ayşe Yılmaz" and j["last"]["total"] == "400 TL"

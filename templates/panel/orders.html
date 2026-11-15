@@ -46,13 +46,9 @@
   {% endfor %}
 </ul>
 {% endif %}
-<div class="kasa-gate" id="kasa-gate" hidden>
-  <button type="button" id="kasa-start"><b>🔔 Sesli kasa modunu başlat</b><small>Sesin açılması için bir kez dokun. Ekran açık kalır; yeni siparişte "Gördüm" diyene kadar çalar.</small></button>
-</div>
 <div class="kasa-alert" id="kasa-alert" hidden role="alertdialog" aria-live="assertive">
   <div><p>🛒 Yeni sipariş</p><h2 id="kasa-title"></h2><p id="kasa-sub"></p>
     <button type="button" class="btn-primary btn-big" id="kasa-ok">Gördüm</button>
     <a class="btn-ghost btn-big" id="kasa-open" href="#">Siparişi aç</a></div>
 </div>
-<div class="kasa-bar" id="kasa-bar" hidden>🔔 Sesli kasa modu açık · ekran açık kalır <button type="button" id="kasa-stop">Kapat</button></div>
 {% endblock %}

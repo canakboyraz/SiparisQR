@@ -125,13 +125,18 @@
       if (!("wakeLock" in navigator) || !kasa) return;
       navigator.wakeLock.request("screen").then(function (w) { wake = w; }).catch(function () {});
     }
-    function setKasa(on) {
+    function paintBtn() {
+      var btn = $("kasa-btn"); if (!btn) return;
+      btn.classList.toggle("is-on", kasa);
+      btn.textContent = kasa ? "🔔 Sesli mod açık" : "🔔 Sesli mod";
+      btn.title = kasa ? "Kapatmak için dokun" : "Yeni siparişte sesli uyarı";
+      btn.onclick = onKasaBtn;
+    }
+    function setKasa(on, quiet) {
       kasa = on;
       try { if (on) localStorage.setItem("kasa", "1"); else localStorage.removeItem("kasa"); } catch (e) {}
-      $("kasa-bar").hidden = !on; $("kasa-gate").hidden = true;
-      $("kasa-btn").classList.toggle("is-on", on);
-      $("kasa-btn").textContent = on ? "🔔 Sesli mod açık" : "🔔 Sesli mod";
-      if (on) { keepAwake(); chime(false); } else if (wake) { wake.release(); wake = null; }
+      paintBtn();
+      if (on) { keepAwake(); if (!quiet) chime(false); } else if (wake) { wake.release(); wake = null; }
       schedule();
     }
     function refreshList() {
@@ -139,13 +144,12 @@
         var doc = new DOMParser().parseFromString(html, "text/html");
         var cur = document.querySelector(".pn-main"), nxt = doc.querySelector(".pn-main");
         if (!cur || !nxt) return;
-        ["#kasa-gate", "#kasa-alert", "#kasa-bar"].forEach(function (sel) { var n = nxt.querySelector(sel); if (n) n.remove(); });
-        var keep = ["kasa-gate", "kasa-alert", "kasa-bar"].map(function (id) { return $(id); });
+        ["#kasa-alert"].forEach(function (sel) { var n = nxt.querySelector(sel); if (n) n.remove(); });
+        var keep = ["kasa-alert"].map(function (id) { return $(id); });
         cur.innerHTML = nxt.innerHTML;
         keep.forEach(function (el) { cur.appendChild(el); });
         list = $("orders");
-        var btn = $("kasa-btn");
-        if (btn) { btn.classList.toggle("is-on", kasa); btn.textContent = kasa ? "🔔 Sesli mod açık" : "🔔 Sesli mod"; btn.onclick = onKasaBtn; }
+        paintBtn();
         document.querySelectorAll(".pn-tabs .badge, .pn-side .badge").forEach(function (b) { b.remove(); });
       }).catch(function () {});
     }
@@ -174,13 +178,20 @@
     }
     function schedule() { clearInterval(timer); timer = setInterval(poll, kasa ? 8000 : 15000); }
     function onKasaBtn() { if (kasa) setKasa(false); else { ensureCtx(); setKasa(true); } }
-    $("kasa-btn").onclick = onKasaBtn;
-    $("kasa-start").addEventListener("click", function () { ensureCtx(); setKasa(true); });
-    $("kasa-stop").addEventListener("click", function () { setKasa(false); });
+    paintBtn();
     document.addEventListener("visibilitychange", function () { if (!document.hidden && kasa) { keepAwake(); poll(); } });
     var want = /[?&]kasa=1/.test(location.search);
     try { want = want || localStorage.getItem("kasa") === "1"; } catch (e) {}
-    if (want) $("kasa-gate").hidden = false;     // ses için bir dokunuş gerekir (iPhone kuralı)
+    if (want) {
+      // Daha önce açıldıysa sessizce açık devam eder; ekrana uyarı çıkmaz.
+      // iPhone sesi ilk dokunuşta açar: sayfada herhangi bir yere ilk dokunuşta ses hazırlanır.
+      setKasa(true, true);
+      var unlock = function () {
+        ensureCtx(); keepAwake();
+        ["pointerdown", "touchend", "keydown"].forEach(function (ev) { document.removeEventListener(ev, unlock, true); });
+      };
+      ["pointerdown", "touchend", "keydown"].forEach(function (ev) { document.addEventListener(ev, unlock, true); });
+    }
     schedule();
   }
 })();
