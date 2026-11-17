@@ -16,7 +16,15 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import core
 import db
 
-CODE_RE = re.compile(r"^[A-Za-z0-9._-]{3,30}$")
+CODE_RE = re.compile(r"^[A-Za-z0-9ÇĞİÖŞÜçğıöşü._-]{3,30}$")
+_TR_FOLD = str.maketrans({"ç": "c", "ğ": "g", "ı": "i", "ö": "o", "ş": "s", "ü": "u",
+                          "Ç": "c", "Ğ": "g", "İ": "i", "I": "i", "Ö": "o", "Ş": "s", "Ü": "u"})
+
+
+def code_key(code):
+    """Kullanıcı kodu karşılaştırma anahtarı: büyük/küçük harf ve Türkçe karakter farkı önemsiz
+    (recep.köse54 = Recep.Kose54 = RECEP.KÖSE54)."""
+    return (code or "").strip().translate(_TR_FOLD).lower()
 
 # Bayinin kendi mağaza panelinde açılabilecek bölümler: anahtar -> (etiket, açıklama, panel uç noktaları)
 PERMS = {
@@ -111,7 +119,13 @@ def get(biz_id, dealer_id):
 
 
 def by_code(biz_id, code):
-    return db.one("SELECT * FROM dealers WHERE business_id = ? AND LOWER(code) = ?", (biz_id, (code or "").strip().lower()))
+    key = code_key(code)
+    if not key:
+        return None
+    for d in db.query("SELECT * FROM dealers WHERE business_id = ?", (biz_id,)):
+        if code_key(d["code"]) == key:
+            return d
+    return None
 
 
 def authenticate(biz_id, code, password):
@@ -135,10 +149,12 @@ def validate(biz_id, form, dealer_id=None, new=False):
     if len(name) < 2:
         errors.append("Bayi adı eksik görünüyor.")
     if not CODE_RE.match(code):
-        errors.append("Kullanıcı kodu 3-30 karakter olmalı; harf, rakam, nokta, tire içerebilir (ör. izmit01).")
-    elif db.one("SELECT id FROM dealers WHERE business_id = ? AND LOWER(code) = ? AND id <> ?",
-                (biz_id, code.lower(), dealer_id or 0)):
-        errors.append("Bu kullanıcı kodu başka bir bayide kullanılıyor.")
+        errors.append("Kullanıcı kodu 3-30 karakter olmalı; harf (Türkçe harfler dahil), rakam, nokta, tire ve alt çizgi "
+                      "içerebilir, boşluk olmamalı (ör. recep.köse54).")
+    else:
+        other = by_code(biz_id, code)
+        if other and other["id"] != (dealer_id or 0):
+            errors.append("Bu kullanıcı kodu başka bir bayide kullanılıyor.")
     pw = str(form.get("password") or "")
     if new and len(pw) < 6:
         errors.append("Şifre en az 6 karakter olmalı.")

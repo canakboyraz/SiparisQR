@@ -28,7 +28,7 @@
     <label class="fld"><span>Telefon</span><input name="phone" type="tel" inputmode="tel" value="{{ pretty_phone(form.phone) if form.phone and form.phone|length == 10 else (form.phone or '') }}" placeholder="05XX XXX XX XX" required></label>
   </div>
   <div class="row2">
-    <label class="fld"><span>Kullanıcı kodu</span><input name="code" value="{{ form.code or '' }}" maxlength="30" required autocapitalize="none" spellcheck="false" placeholder="ör. ankara01"><small>Bayi bununla giriş yapar.</small></label>
+    <label class="fld"><span>Kullanıcı kodu</span><input name="code" value="{{ form.code or '' }}" maxlength="30" required autocapitalize="none" spellcheck="false" placeholder="ör. ankara01"><small>Bayi bununla giriş yapar. Büyük/küçük harf ve ö-o gibi farklar önemsiz.</small></label>
     <label class="fld"><span>{{ 'Yeni şifre' if d else 'Şifre' }}</span><input name="password" type="text" autocomplete="new-password" minlength="6" {% if not d %}required{% endif %} placeholder="{{ 'değiştirmeyeceksen boş bırak' if d else 'en az 6 karakter' }}"></label>
   </div>
   <div class="row2">

@@ -1379,3 +1379,21 @@ def test_dealer_variant_price_and_isolation(app):
     assert shop.get("/s/diger-dukkan/bayi/").status_code == 302
     # Bayi siparişi API'si girişsiz çalışmaz
     assert _dealer_order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "variant": vs["1 kg"]["id"], "qty": 1}]).status_code == 302
+
+
+def test_dealer_code_turkish(app):
+    c, biz, _, t = _owner(app)
+    r = c.post("/panel/dealers/new", data={"csrf": t, "name": "Recep Köse", "code": "recep.köse54", "password": "bayi1234",
+               "phone": "0532 111 22 33", "active": "1"})
+    assert "Bayi eklendi" in r.get_data(as_text=True)
+    # Aynı kod büyük harf / Türkçe karaktersiz yazılsa da aynı sayılır
+    r = c.post("/panel/dealers/new", data={"csrf": t, "name": "Başka", "code": "Recep.Kose54", "password": "bayi1234",
+               "phone": "0532 111 22 34"}, follow_redirects=True)
+    assert "başka bir bayide" in r.get_data(as_text=True)
+    r = c.post("/panel/dealers/new", data={"csrf": t, "name": "Boşluklu", "code": "recep köse", "password": "bayi1234",
+               "phone": "0532 111 22 35"}, follow_redirects=True)
+    assert "boşluk olmamalı" in r.get_data(as_text=True)
+    for typed in ("recep.köse54", "Recep.Köse54", "RECEP.KÖSE54", "recep.kose54"):
+        shop = app.test_client()
+        tk = csrf(shop, "/s/ege-zeytin/bayi/giris")
+        assert shop.post("/s/ege-zeytin/bayi/giris", data={"csrf": tk, "code": typed, "password": "bayi1234"}).status_code == 302, typed
