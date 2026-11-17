@@ -84,8 +84,24 @@ def login_required(view):
             session.clear()
             abort(403, "Bu işletmenin hesabı kapalı.")
         g.biz = biz
+        g.parent_biz = db.one("SELECT * FROM businesses WHERE id = ?", (biz["parent_id"],)) if biz.get("parent_id") else None
+        g.perms = u.get("perms") if not g.impersonating else None   # None = tam yetki (işletme sahibi)
+        if g.perms is not None:
+            import dealers
+            if not dealers.endpoint_allowed(g.perms, request.endpoint):
+                abort(403, "Bu bölüm için yetkin yok. İşletme sahibinden açmasını isteyebilirsin.")
         return view(*a, **kw)
     return wrapped
+
+
+def can(key):
+    """Panel menüsü: bu bölüm açık mı? (bayi kullanıcıları için seçilen yetkiler)"""
+    perms = getattr(g, "perms", None)
+    if perms is None:
+        return True
+    import dealers
+    need = dealers.NAV_PERM.get(key)
+    return need is None or need in dealers.perms_of(perms)
 
 
 def admin_required(view):
@@ -195,7 +211,8 @@ def create_app(test_config=None):
         g.host_biz = None
         if host not in platform_hosts():
             g.host_biz = core.business_by_host(host)
-        if request.method == "POST" and request.path.startswith(("/panel", "/admin", "/login", "/logout")):
+        if request.method == "POST" and (request.path.startswith(("/panel", "/admin", "/login", "/logout"))
+                                          or ("/bayi/" in request.path and "/bayi/api/" not in request.path)):
             sent = request.form.get("csrf") or request.headers.get("X-CSRF-Token")
             if not sent or sent != session.get("csrf"):
                 abort(400, "Oturum süresi dolmuş. Sayfayı yenileyip tekrar dener misin?")
@@ -225,7 +242,7 @@ def create_app(test_config=None):
         return {"csrf_token": csrf_token, "tl": core.tl, "local_time": core.local_time,
                 "pretty_phone": core.pretty_phone, "pretty_iban": core.pretty_iban,
                 "STATUS": core.STATUS, "PAYMENT": core.PAYMENT, "PAYMENT_SHORT": core.PAYMENT_SHORT, "FULFILMENT": core.FULFILMENT,
-                "platform_name": platform_name(), "current_user": current_user}
+                "platform_name": platform_name(), "current_user": current_user, "can": can}
 
     @app.errorhandler(400)
     @app.errorhandler(403)
@@ -239,8 +256,9 @@ def create_app(test_config=None):
         from flask import render_template
         return render_template("error.html", code=413, message="Dosya çok büyük (en fazla 12 MB)."), 413
 
-    from routes import admin, auth, panel, store
+    from routes import admin, auth, dealer, panel, store
     app.register_blueprint(auth.bp)
+    app.register_blueprint(dealer.bp)
     app.register_blueprint(panel.bp)
     app.register_blueprint(admin.bp)
     app.register_blueprint(store.bp)

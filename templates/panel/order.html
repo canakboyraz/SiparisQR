@@ -1,12 +1,15 @@
 {% extends "panel/layout.html" %}
 {% block ptitle %}Sipariş #{{ o.id }}{% endblock %}
 {% block content %}
-<a class="pn-back" href="{{ url_for('panel.orders', tab='pending' if o.status == 'pending' else ('active' if o.status in ('approved','on_the_way') else 'done')) }}">← Siparişler</a>
+<a class="pn-back" href="{{ url_for('panel.orders', tab='dealer') if dealer else url_for('panel.orders', tab='pending' if o.status == 'pending' else ('active' if o.status in ('approved','on_the_way') else 'done')) }}">← Siparişler</a>
 <div class="pn-head">
   <h1>#{{ o.id }} · {{ tl(o.total) }}</h1>
   <span class="pill is-{{ o.status }}">{{ STATUS[o.status] }}</span>
 </div>
 <p class="muted">{{ local_time(o.created_at) }}{% if o.approved_at %} · onay {{ local_time(o.approved_at, '%H:%M') }}{% endif %}</p>
+{% if dealer %}
+<p class="dl-orderbadge"><span class="pill is-dealer">Bayi siparişi</span> <a href="{{ url_for('panel.dealer_form', dealer_id=dealer.id) }}">{{ dealer.name }}{% if dealer.city %} · {{ dealer.city }}{% endif %}</a> · bayi fiyatlarıyla, damga/ödül uygulanmaz.</p>
+{% endif %}
 
 {% if o.status == 'pending' %}
 <section class="card act-card">

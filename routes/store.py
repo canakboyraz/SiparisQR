@@ -5,6 +5,7 @@ from flask import Blueprint, Response, abort, g, jsonify, render_template, reque
 
 import core
 import db
+import dealers
 import webpush
 from app import notify_owner, public_store_url, push_subject, rate_limited, store_base
 
@@ -47,7 +48,8 @@ def _store_page(biz):
     }
     return render_template("store.html", biz=biz, groups=groups, products=products, config=config,
                            reward=core.reward_rule(biz), first_offer=core.first_order_offer(biz), zones=zs,
-                           pay_options=core.payment_options(biz), sub_ok=core.subscription_ok(biz))
+                           pay_options=core.payment_options(biz), sub_ok=core.subscription_ok(biz),
+                           has_dealers=not biz.get("parent_id") and dealers.has_dealers(biz["id"]))
 
 
 @bp.get("/")
@@ -117,7 +119,7 @@ def place_slug(slug):
 
 
 def _status_data(biz, order):
-    card = core.loyalty_card(biz, order["customer_id"])
+    card = None if order.get("dealer_id") else core.loyalty_card(biz, order["customer_id"])
     return {
         "cargo": {"company": order["cargo_company"], "no": order["cargo_tracking"], "url": order["cargo_url"]}
         if order["cargo_tracking"] or order["cargo_company"] else None,
@@ -146,7 +148,7 @@ def _status(biz, token, as_json=False):
     lines = core.order_lines(order["id"])
     customer = db.one("SELECT * FROM customers WHERE id = ?", (order["customer_id"],))
     invite = None
-    if biz["referral_active"] and biz["referral_text"] and order["status"] in core.COUNTED:
+    if biz["referral_active"] and biz["referral_text"] and order["status"] in core.COUNTED and not order.get("dealer_id"):
         invite = public_store_url(biz) + "?ref=" + core.customer_ref_code(customer)
     reorder = [{"id": l["product_id"], "variant": l["variant_id"], "qty": l["qty"]} for l in lines if l["product_id"]]
     card_pay = None

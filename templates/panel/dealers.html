@@ -1,0 +1,31 @@
+{% extends "panel/layout.html" %}
+{% block ptitle %}Bayiler{% endblock %}
+{% block content %}
+<div class="pn-head"><h1>Bayiler</h1>
+  <span class="pn-head-r"><a class="btn-sm" href="{{ url_for('panel.orders', tab='dealer') }}">Bayi siparişleri</a><a class="btn-primary btn-sm" href="{{ url_for('panel.dealer_form') }}">+ Bayi ekle</a></span></div>
+<p class="muted">Bayilerin mağazanın üstündeki <b>Bayi girişi</b>'ne kullanıcı kodu ve şifreyle girer, <b>bayi fiyatlarıyla</b> sipariş verir. Bayi siparişlerinde damga, ödül ve kampanya uygulanmaz. Giriş adresi: <a href="{{ login_url }}" target="_blank" rel="noopener">{{ login_url }}</a></p>
+{% if not rows %}
+<div class="pn-empty">
+  <p><b>Henüz bayi yok.</b></p>
+  <p class="muted">İlk bayiyi ekleyince ürün sayfalarında <b>Bayi fiyatı</b> alanı açılır.</p>
+  <a class="btn-primary" href="{{ url_for('panel.dealer_form') }}">+ Bayi ekle</a>
+</div>
+{% else %}
+<ul class="dl-cards">
+  {% for d in rows %}{% set s = stats.get(d.id) %}
+  <li class="{{ 'dl-off' if not d.active }}"><a href="{{ url_for('panel.dealer_form', dealer_id=d.id) }}">
+    <div class="dl-info">
+      <b>{{ d.name }}{% if not d.active %} · <span class="pill">Pasif</span>{% endif %}</b>
+      <small>Kod: {{ d.code }}{% if d.city %} · {{ d.city }}{% endif %}{% if d.discount|float > 0 %} · ek %{{ d.discount|replace('.', ',') }}{% endif %}{% if d.store_business_id %} · kendi mağazası var{% endif %}</small>
+      {% if s and s.pending %}<small><span class="pill is-pending">{{ s.pending }} onay bekliyor</span></small>{% endif %}
+    </div>
+    <div class="dl-money">
+      <b>{{ tl(s.total) if s else '0 TL' }}</b>
+      <small>{{ s.orders if s else 0 }} sipariş</small>
+      {% if s and s.due > 0 %}<small class="dl-rem">{{ tl(s.due) }} borç</small>{% endif %}
+    </div>
+  </a></li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

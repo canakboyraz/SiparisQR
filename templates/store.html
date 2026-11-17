@@ -1,11 +1,23 @@
 {% extends "base.html" %}
-{% block title %}{{ biz.name }} · Sipariş ver{% endblock %}
+{% block title %}{{ biz.name }} · {{ 'Bayi siparişi' if dealer else 'Sipariş ver' }}{% endblock %}
 {% block head %}<meta name="theme-color" content="{{ biz.accent }}">
 <meta name="description" content="{{ (biz.tagline or biz.about or biz.name)|truncate(150) }} — online sipariş">
 <style>:root{--accent:{{ biz.accent }}}</style>{% endblock %}
 {% block body_class %}store{% endblock %}
 {% block body %}
 <div id="st" data-config='{{ config|tojson }}'>
+  {% if dealer %}
+  <div class="st-dealerbar">
+    <div><small>Bayi girişi</small><b>{{ dealer.name }}</b>{% if dealer_pct %}<em>Ek %{{ dealer_pct|replace('.', ',') }} indirim uygulanıyor</em>{% endif %}</div>
+    <nav>
+      <a href="{{ g.base }}/bayi/siparisler">Siparişlerim</a>
+      {% if dealer_store %}<form method="post" action="{{ g.base }}/bayi/magazam"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button type="submit">Mağazam</button></form>{% endif %}
+      <form method="post" action="{{ g.base }}/bayi/cikis"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button type="submit">Çıkış</button></form>
+    </nav>
+  </div>
+  {% elif has_dealers %}
+  <div class="st-toplinks"><a class="st-dealer-link" href="{{ g.base }}/bayi/giris">Bayi girişi</a></div>
+  {% endif %}
   <header class="st-hero">
     <div class="st-brand">
       {% if biz.logo_id %}<img class="st-logo" src="/img/{{ biz.logo_id }}" alt="">
@@ -15,13 +27,16 @@
         {% if biz.tagline %}<p class="st-slogan">{{ biz.tagline }}</p>{% endif %}
       </div>
     </div>
-    {% if biz.about %}
+    {% if dealer %}
+    <p class="st-dealer-note">Bayi fiyatlarıyla sipariş veriyorsun. Siparişin onaylanınca <b>Siparişlerim</b>'den takip edebilirsin.</p>
+    {% endif %}
+    {% if biz.about and not dealer %}
     <div class="st-about" id="st-about">
       <p>{{ biz.about }}</p>
       <button type="button" class="st-more" id="st-more" hidden>Devamını oku</button>
     </div>
     {% endif %}
-    {% if reward %}
+    {% if reward and not dealer %}
     <div class="st-reward" role="note">
       <span class="st-reward-ico" aria-hidden="true">🎁</span>
       <div><b>{{ reward }}</b><small>Siparişlerin telefon numarana kaydedilir, ödülün otomatik hesaplanır.</small></div>
@@ -31,12 +46,12 @@
     <div class="st-reward st-first" role="note"><span class="st-reward-ico" aria-hidden="true">✨</span>
       <div><b>{{ first_offer }}</b><small>İndirim sepette otomatik uygulanır.</small></div></div>
     {% endif %}
-    {% if biz.referral_active and biz.referral_text %}
+    {% if biz.referral_active and biz.referral_text and not dealer %}
     <div class="st-ref" id="st-ref" hidden>👋 Arkadaşın seni davet etti! İlk siparişin onaylanınca ikinize de <b>{{ biz.referral_text }}</b>.</div>
     {% endif %}
     {% if not sub_ok or not pay_options %}
     <p class="st-closed">Bu mağaza şu an sipariş almıyor.</p>
-    {% elif not biz.ordering_open %}
+    {% elif not biz.ordering_open and not dealer %}
     <p class="st-closed">{{ biz.closed_message or "Şu an sipariş alınmıyor. Ürünlere göz atabilirsin." }}</p>
     {% endif %}
   </header>
@@ -64,11 +79,15 @@
           {% elif p.unit %}<span class="st-unit">{{ p.unit }}</span>{% endif %}
           {% if p._ok and not p._variants and p.stock is not none and p.stock <= 5 %}<span class="st-low">Son {{ p.stock }} adet</span>{% endif %}
           <div class="st-item-row">
+            {% if dealer %}
+            <b class="st-price">{% if p._variants|length > 1 %}<small>{{ tl(p._dprice) }}'den</small>{% else %}{{ tl(p._dprice) }}{% endif %}{% if p._dprice|float < p.price|float and p._variants|length <= 1 %}<s>{{ tl(p.price) }}</s>{% endif %}</b>
+            {% else %}
             <b class="st-price">{% if p._variants|length > 1 %}<small>{{ tl(p.price) }}'den</small>{% else %}{{ tl(p.price) }}{% endif %}</b>
+            {% endif %}
             {% if not p._ok %}<span class="st-out">Tükendi</span>
-            {% elif biz.ordering_open and sub_ok and pay_options and p._variants %}
+            {% elif (biz.ordering_open or dealer) and sub_ok and pay_options and p._variants %}
             <button type="button" class="st-plus" data-open="{{ p.id }}" aria-label="{{ p.name }} seçenek seç">+</button>
-            {% elif biz.ordering_open and sub_ok and pay_options %}
+            {% elif (biz.ordering_open or dealer) and sub_ok and pay_options %}
             <div class="st-add" data-add="{{ p.id }}">
               <button type="button" class="st-plus" data-act="add" aria-label="{{ p.name }} sepete ekle">+</button>
               <div class="st-qty" hidden><button type="button" data-act="dec" aria-label="Azalt">−</button><b>0</b><button type="button" data-act="inc" aria-label="Artır">+</button></div>
@@ -88,7 +107,7 @@
     {% if biz.phone %}<a href="tel:+90{{ biz.phone }}">{{ pretty_phone(biz.phone) }}</a>{% endif %}
     {% if biz.whatsapp %}<a href="https://wa.me/90{{ biz.whatsapp }}" rel="noopener">WhatsApp</a>{% endif %}
     {% if biz.instagram %}<a href="https://instagram.com/{{ biz.instagram }}" rel="noopener">Instagram</a>{% endif %}
-    <a href="#" id="st-mine" hidden>Siparişlerim</a>
+    {% if not dealer %}<a href="#" id="st-mine" hidden>Siparişlerim</a>{% endif %}
     <span>{{ platform_name }} ile sipariş</span>
   </footer>
 </div>
@@ -132,15 +151,20 @@
       <input type="hidden" name="fulfilment" value="{{ 'delivery' if biz.delivery else 'pickup' }}">
       {% endif %}
 
+      {% if dealer %}
+      <input type="hidden" name="name" value="{{ dealer.name }}"><input type="hidden" name="phone" value="{{ dealer.phone }}">
+      <p class="st-pickup">Sipariş veren: <b>{{ dealer.name }}</b> · {{ pretty_phone(dealer.phone) }}</p>
+      {% else %}
       <label class="fld"><span>Ad soyad</span><input name="name" autocomplete="name" maxlength="80" required></label>
       <label class="fld"><span>Telefon</span><input name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="05XX XXX XX XX" maxlength="20" required></label>
+      {% endif %}
       {% if biz.delivery and zones %}
       <label class="fld" id="st-zone"><span>Teslimat bölgesi</span>
         <select name="zone"><option value="">Seç</option>{% for z in zones %}<option value="{{ z.id }}">{{ z.name }} · {{ tl(z.fee) if z.fee|float > 0 else 'ücretsiz' }}{% if z.free_over|float > 0 %} ({{ tl(z.free_over) }} üstü ücretsiz){% endif %}</option>{% endfor %}</select></label>
       {% endif %}
       {% if biz.delivery %}
-      <label class="fld" id="st-addr"><span>Teslimat adresi</span><textarea name="address" rows="3" maxlength="400" autocomplete="street-address" placeholder="Mahalle, sokak, bina no, daire, ilçe"></textarea>
-        {% if biz.delivery_note %}<small>{{ biz.delivery_note }}</small>{% endif %}</label>
+      <label class="fld" id="st-addr"><span>Teslimat adresi</span><textarea name="address" rows="3" maxlength="400" autocomplete="street-address" placeholder="Mahalle, sokak, bina no, daire, ilçe">{{ dealer.address if dealer else '' }}</textarea>
+        {% if biz.delivery_note and not dealer %}<small>{{ biz.delivery_note }}</small>{% endif %}</label>
       {% endif %}
       {% if biz.pickup and biz.pickup_address %}
       <p class="st-pickup" id="st-pickup" {% if biz.delivery %}hidden{% endif %}>Teslim alma adresi: <b>{{ biz.pickup_address }}</b></p>
@@ -156,10 +180,12 @@
       <div class="st-payinfo"><b>Ödeme: {{ PAYMENT[pay_options[0]] }}</b>
         <small>{% if pay_options[0] == 'iban' %}Hesap bilgileri siparişi gönderince gösterilir.{% elif pay_options[0] == 'cash' %}Ödemeyi teslimatta nakit yaparsın.{% elif pay_options[0] == 'pos' %}Ödemeyi teslimatta kartla yaparsın.{% else %}Siparişten sonra güvenli ödeme sayfası açılır.{% endif %}</small></div>
       {% endif %}
+      {% if not dealer %}
       <label class="fld"><span>Bizi kim önerdi? <small>(isteğe bağlı)</small></span><input name="referrer_name" maxlength="60" autocomplete="off" placeholder="ör. Ayşe Hanım"></label>
-      <label class="fld"><span>Not <small>(isteğe bağlı)</small></span><textarea name="note" rows="2" maxlength="400" placeholder="ör. Zile basmayın, arayın"></textarea></label>
+      {% endif %}
+      <label class="fld"><span>Not <small>(isteğe bağlı)</small></span><textarea name="note" rows="2" maxlength="400" placeholder="{{ 'ör. Kargoyla gönderin' if dealer else 'ör. Zile basmayın, arayın' }}"></textarea></label>
 
-      {% if biz.birthday_active and biz.birthday_text %}
+      {% if biz.birthday_active and biz.birthday_text and not dealer %}
       <div class="fld st-bday"><span>Doğum günün <small>(isteğe bağlı · o hafta {{ biz.birthday_text }} hediye)</small></span>
         <div class="row2 is-tight">
           <select name="birth_day" aria-label="Gün"><option value="">Gün</option>{% for d in range(1, 32) %}<option>{{ d }}</option>{% endfor %}</select>
@@ -173,10 +199,16 @@
         <div class="is-total"><dt>Toplam</dt><dd id="st-grand">0 TL</dd></div>
       </dl>
       <p class="st-err" id="st-err" role="alert" hidden></p>
+      {% if dealer %}
+      <input type="checkbox" name="kvkk" checked hidden>
+      <button class="btn-primary" type="submit" id="st-send">Bayi siparişini gönder</button>
+      <p class="st-after">Siparişin önce {{ biz.name }} tarafından onaylanır. Durumunu Siparişlerim'den takip edebilirsin.</p>
+      {% else %}
       <label class="st-kvkk"><input type="checkbox" name="marketing_ok"> Kampanya ve yeni ürün duyurularını WhatsApp'tan almak istiyorum (isteğe bağlı).</label>
       <label class="st-kvkk"><input type="checkbox" name="kvkk" required> Adımın, telefonumun ve adresimin siparişim için {{ biz.name }} ile paylaşılmasını kabul ediyorum.</label>
       <button class="btn-primary" type="submit" id="st-send">Siparişi gönder</button>
       <p class="st-after">Siparişin önce {{ biz.name }} tarafından onaylanır. Onay durumunu bir sonraki ekranda göreceksin.</p>
+      {% endif %}
     </form>
   </div>
 </div>

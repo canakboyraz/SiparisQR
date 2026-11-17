@@ -7,6 +7,7 @@ from PIL import Image, ImageOps
 
 import core
 import db
+import dealers
 import webpush
 from app import (current_user, login_required, notify_owner, platform_name, public_order_url, public_store_url,
                  push_subject)
@@ -52,22 +53,46 @@ def index():
 @bp.get("/orders")
 @login_required
 def orders():
+    tabs = dict(TABS)
+    dealer_list = []
+    if not g.biz.get("parent_id") and g.perms is None:
+        dealer_list = db.query("SELECT id, name FROM dealers WHERE business_id = ? ORDER BY name", (g.biz["id"],))
+        if dealer_list:
+            tabs["dealer"] = ("Bayi", ())
     tab = request.args.get("tab", "pending")
-    if tab not in TABS:
+    if tab not in tabs:
         tab = "pending"
-    sts = TABS[tab][1]
-    marks = ",".join("?" for _ in sts)
-    limit = 200 if tab != "done" else 100
-    rows = db.query(f"SELECT * FROM orders WHERE business_id = ? AND status IN ({marks}) "
-                    f"ORDER BY id {'ASC' if tab == 'pending' else 'DESC'} LIMIT {limit}", (g.biz["id"], *sts))
+    dealer_filter, dealer_due = None, None
+    if tab == "dealer":
+        dealer_filter = request.args.get("bayi", type=int)
+        sql = "SELECT * FROM orders WHERE business_id = ? AND dealer_id IS NOT NULL"
+        params = [g.biz["id"]]
+        if dealer_filter:
+            sql += " AND dealer_id = ?"
+            params.append(dealer_filter)
+        rows = db.query(sql + " ORDER BY id DESC LIMIT 300", params)
+        dealer_due = sum((core.payment_state(o)["remaining"] for o in rows
+                          if o["status"] in ("approved", "on_the_way", "delivered")), core.money("0"))
+    else:
+        sts = TABS[tab][1]
+        marks = ",".join("?" for _ in sts)
+        limit = 200 if tab != "done" else 100
+        rows = db.query(f"SELECT * FROM orders WHERE business_id = ? AND status IN ({marks}) "
+                        f"ORDER BY id {'ASC' if tab == 'pending' else 'DESC'} LIMIT {limit}", (g.biz["id"], *sts))
     has_reward = {r["customer_id"] for r in db.query(
         "SELECT DISTINCT customer_id FROM rewards WHERE business_id = ? AND status = 'earned'", (g.biz["id"],))}
     latest = db.one("SELECT MAX(id) AS m FROM orders WHERE business_id = ?", (g.biz["id"],))
     steps = core.setup_steps(g.biz)
-    show_steps = not all(done for _, done, _ in steps) and not request.cookies.get("kurulum-gizle")
-    return render_template("panel/orders.html", active="orders", tab=tab, tabs=TABS, rows=rows, steps=steps,
+    show_steps = (not all(done for _, done, _ in steps) and not request.cookies.get("kurulum-gizle")
+                  and g.perms is None and not g.biz.get("parent_id"))
+    counts = _counts(g.biz["id"])
+    if "dealer" in tabs:
+        counts["dealer"] = int(db.one("SELECT COUNT(*) AS n FROM orders WHERE business_id = ? AND dealer_id IS NOT NULL "
+                                      "AND status = 'pending'", (g.biz["id"],))["n"])
+    return render_template("panel/orders.html", active="orders", tab=tab, tabs=tabs, rows=rows, steps=steps,
+                           dealer_list=dealer_list, dealer_filter=dealer_filter, dealer_due=dealer_due,
                            show_steps=show_steps,
-                           counts=_counts(g.biz["id"]), has_reward=has_reward, latest=int(latest["m"] or 0))
+                           counts=counts, has_reward=has_reward, latest=int(latest["m"] or 0))
 
 
 @bp.get("/orders/poll")
@@ -94,7 +119,8 @@ def order(order_id):
     o = _order_or_404(order_id)
     customer = db.one("SELECT * FROM customers WHERE id = ?", (o["customer_id"],))
     history = db.one("SELECT COUNT(*) AS n FROM orders WHERE customer_id = ? AND id <> ?", (o["customer_id"], o["id"]))
-    card = core.loyalty_card(g.biz, o["customer_id"])
+    card = None if o.get("dealer_id") else core.loyalty_card(g.biz, o["customer_id"])
+    dealer = dealers.get(g.biz["id"], o["dealer_id"]) if o.get("dealer_id") else None
     given_here = db.query("SELECT * FROM rewards WHERE given_order_id = ?", (o["id"],))
     earned_here = db.query("SELECT * FROM rewards WHERE earned_order_id = ?", (o["id"],))
     pay = core.payment_state(o)
@@ -104,7 +130,7 @@ def order(order_id):
     return render_template("panel/order.html", active="orders", o=o, lines=core.order_lines(o["id"]),
                            customer=customer, previous=int(history["n"]), card=card,
                            given_here=given_here, earned_here=earned_here, order_url=url,
-                           pay=pay, pays=core.payments(o["id"]), msgs=msgs, KIND_LABEL=core.KIND_LABEL,
+                           pay=pay, pays=core.payments(o["id"]), msgs=msgs, KIND_LABEL=core.KIND_LABEL, dealer=dealer,
                            CARGO=CARGO_COMPANIES)
 
 
@@ -367,6 +393,7 @@ def _stock(raw):
 
 def _variants_from_form(f):
     names, prices, stocks, ids = (f.getlist(k) for k in ("v_name", "v_price", "v_stock", "v_id"))
+    dprices = f.getlist("v_dprice")
     out = []
     for i, name in enumerate(names):
         name = (name or "").strip()[:40]
@@ -383,7 +410,8 @@ def _variants_from_form(f):
             raise ValueError(f"'{name}' seçeneğinin fiyatı 0'dan büyük olmalı.")
         vid = ids[i] if i < len(ids) else ""
         out.append({"id": int(vid) if vid.isdigit() else None, "name": name, "price": str(price),
-                    "stock": _stock(stocks[i] if i < len(stocks) else "")})
+                    "stock": _stock(stocks[i] if i < len(stocks) else ""),
+                    "dealer_price": dealers.parse_dealer_price(dprices[i] if i < len(dprices) else "", f"'{name}' seçeneğinin ")})
     if len(out) > 20:
         raise ValueError("En fazla 20 seçenek eklenebilir.")
     return out
@@ -406,12 +434,13 @@ def _save_variants(product_id, variants):
     for pos, v in enumerate(variants):
         if v["id"] in existing:
             db.update("product_variants", v["id"], {"name": v["name"], "price": v["price"], "stock": v["stock"],
-                                                    "position": pos})
+                                                    "position": pos, "dealer_price": v["dealer_price"]})
             keep.add(v["id"])
             _log_form_stock(product_id, v["id"], rows[v["id"]]["stock"], v["stock"])
         else:
             vid = db.insert("product_variants", {"business_id": g.biz["id"], "product_id": product_id, "name": v["name"],
-                                                 "price": v["price"], "stock": v["stock"], "position": pos})
+                                                 "price": v["price"], "stock": v["stock"], "position": pos,
+                                                 "dealer_price": v["dealer_price"]})
             if v["stock"] is not None:
                 _log_form_stock(product_id, vid, None, v["stock"])
     for vid in existing - keep:
@@ -450,7 +479,8 @@ def product_form(product_id=None):
                       "unit": (f.get("unit") or "").strip()[:40], "price": str(price),
                       "stock": None if new_variants else _stock(f.get("stock")),
                       "category_id": _category_id(f), "available": 1 if f.get("available") else 0,
-                      "visible": 1 if f.get("visible") else 0}
+                      "visible": 1 if f.get("visible") else 0,
+                      "dealer_price": None if new_variants else dealers.parse_dealer_price(f.get("dealer_price"))}
             photo = request.files.get("photo")
             if photo and photo.filename:
                 values["image_id"] = save_image(photo, g.biz["id"])
@@ -475,13 +505,18 @@ def product_form(product_id=None):
         except ValueError as e:
             db.rollback()
             flash(str(e), "error")
-        p = {**(p or {}), **{k: f.get(k, "") for k in ("name", "description", "unit", "price", "stock")},
+        p = {**(p or {}), **{k: f.get(k, "") for k in ("name", "description", "unit", "price", "stock", "dealer_price")},
              "available": bool(f.get("available")), "visible": bool(f.get("visible")),
              "category_id": f.get("category_id", type=int), "image_id": (p or {}).get("image_id"), "id": product_id}
-        variants = [{"id": (int(i) if i.isdigit() else ""), "name": n, "price": pr, "stock": st}
-                    for i, n, pr, st in zip(f.getlist("v_id"), f.getlist("v_name"), f.getlist("v_price"), f.getlist("v_stock"))
+        dps = f.getlist("v_dprice") + [""] * 50
+        variants = [{"id": (int(i) if i.isdigit() else ""), "name": n, "price": pr, "stock": st, "dealer_price": dp}
+                    for i, n, pr, st, dp in zip(f.getlist("v_id"), f.getlist("v_name"), f.getlist("v_price"),
+                                                f.getlist("v_stock"), dps)
                     if n or pr]
-    return render_template("panel/product_form.html", active="products", p=p, cats=cats, variants=variants)
+    show_dealer = not g.biz.get("parent_id") and g.perms is None and bool(
+        db.one("SELECT id FROM dealers WHERE business_id = ? LIMIT 1", (g.biz["id"],)))
+    return render_template("panel/product_form.html", active="products", p=p, cats=cats, variants=variants,
+                           show_dealer=show_dealer)
 
 
 @bp.route("/products/<int:product_id>/stock", methods=["GET", "POST"])
@@ -710,7 +745,7 @@ def customers():
            "(SELECT COALESCE(SUM(o.stamps), 0) FROM orders o WHERE o.customer_id = c.id AND o.counts_for_reward = 1 "
            " AND o.status IN ('approved','on_the_way','delivered')) AS counted, "
            "(SELECT MAX(o.created_at) FROM orders o WHERE o.customer_id = c.id) AS last_at "
-           "FROM customers c WHERE c.business_id = ?")
+           "FROM customers c WHERE c.business_id = ? AND c.dealer_id IS NULL")
     params = [g.biz["id"]]
     if q:
         digits = core.normalize_phone(q) or "".join(ch for ch in q if ch.isdigit())
@@ -981,7 +1016,8 @@ def reports():
             first_ids[r["customer_id"]] = r["first_id"]
     customers = {}
     for o in good:
-        customers.setdefault(o["customer_id"], []).append(o)
+        if not o.get("dealer_id"):
+            customers.setdefault(o["customer_id"], []).append(o)
     new_c = sum(1 for cid, os_ in customers.items() if first_ids.get(cid) in {o["id"] for o in os_})
     ret_c = len(customers) - new_c
     # en çok satanlar
@@ -1034,7 +1070,19 @@ def reports():
         "rewards": {r["kind"]: int(r["n"]) for r in rewards},
     }
     stock, stock_sum = _stock_overview(bid, s_iso, e_iso)
-    return render_template("panel/reports.html", active="reports", key=key, periods=PERIODS, s=stats, top=top, refs=refs,
+    dsales = {}
+    dnames = {d["id"]: d["name"] for d in db.query("SELECT id, name FROM dealers WHERE business_id = ?", (bid,))}
+    for o in good:
+        if o.get("dealer_id"):
+            r = dsales.setdefault(o["dealer_id"], {"id": o["dealer_id"], "name": dnames.get(o["dealer_id"], "?"),
+                                                   "n": 0, "cents": 0, "due": 0})
+            r["n"] += 1
+            r["cents"] += core.cents(o["total"])
+            r["due"] += max(core.cents(o["total"]) - int(o["paid_cents"] or 0), 0)
+    dsales = sorted(dsales.values(), key=lambda x: -x["cents"])
+    stats["dealer_cents"] = core.from_cents(sum(x["cents"] for x in dsales))
+    stats["retail_cents"] = core.from_cents(revenue - sum(x["cents"] for x in dsales))
+    return render_template("panel/reports.html", dsales=dsales, active="reports", key=key, periods=PERIODS, s=stats, top=top, refs=refs,
                            days=days, peak=peak, start=start, end=end - timedelta(days=1), KIND_LABEL=core.KIND_LABEL,
                            stock=stock, stock_sum=stock_sum)
 
@@ -1154,3 +1202,90 @@ def subscription():
     if ps["contact_whatsapp"]:
         wa = core.wa_link(ps["contact_whatsapp"], f"Merhaba, {g.biz['name']} ({g.biz['slug']}) aboneliğim hakkında yazıyorum.")
     return render_template("panel/subscription.html", active="settings", ps=ps, wa=wa)
+
+
+# ── Bayiler ─────────────────────────────────────────────────────────────────
+
+def _owner_only():
+    if g.perms is not None or g.biz.get("parent_id"):
+        abort(403, "Bu bölüm yalnızca işletme sahibine açık.")
+
+
+def _dealer_login_url():
+    return public_store_url(g.biz).rstrip("/") + "/bayi/giris"
+
+
+@bp.get("/dealers")
+@login_required
+def dealers_page():
+    _owner_only()
+    rows = db.query("SELECT * FROM dealers WHERE business_id = ? ORDER BY active DESC, name", (g.biz["id"],))
+    return render_template("panel/dealers.html", active="dealers", rows=rows, stats=dealers.stats(g.biz["id"]),
+                           login_url=_dealer_login_url())
+
+
+# Kısa ad (şablonlarda url_for('panel.dealers'))
+bp.add_url_rule("/dealers", "dealers", dealers_page)
+
+
+@bp.route("/dealers/new", methods=["GET", "POST"])
+@bp.route("/dealers/<int:dealer_id>", methods=["GET", "POST"])
+@login_required
+def dealer_form(dealer_id=None):
+    _owner_only()
+    d = dealers.get(g.biz["id"], dealer_id) if dealer_id else None
+    if dealer_id and not d:
+        abort(404)
+    store = db.one("SELECT * FROM businesses WHERE id = ?", (d["store_business_id"],)) if d and d["store_business_id"] else None
+    form = dict(d or {"active": 1, "discount": "0", "perms": ""})
+    form["perms_list"] = dealers.perms_of(form.get("perms"))
+    share = None
+    if request.method == "POST":
+        f = request.form
+        raw = {k: f.get(k) for k in ("name", "code", "password", "phone", "city", "address", "note", "discount", "active")}
+        raw["perms"] = f.getlist("perms")
+        values, errors = dealers.validate(g.biz["id"], raw, dealer_id=d["id"] if d else None, new=not d)
+        want_store = bool(f.get("store")) or bool(store)
+        if errors:
+            for e in errors:
+                flash(e, "error")
+            form = {**form, **{k: v for k, v in raw.items() if k != "password"}, "perms_list": raw["perms"],
+                    "active": 1 if raw.get("active") else 0}
+        else:
+            saved = dealers.save(g.biz, values, d, want_store=want_store, store_name=f.get("store_name") or "")
+            msg = "Bayi kaydedildi." if d else "Bayi eklendi."
+            if want_store and not (d and d["store_business_id"]):
+                msg += " Kendi mağazası açıldı ve ürünlerin kopyalandı."
+            flash(msg, "ok")
+            pw = raw.get("password") or ""
+            if pw:
+                text = (f"Merhaba {saved['name'].split()[0]}, {g.biz['name']} bayi girişin hazır.\n"
+                        f"Giriş: {_dealer_login_url()}\nKullanıcı kodu: {saved['code']}\nŞifre: {pw}")
+                share = {"text": text, "wa": core.wa_link(saved["phone"], text)}
+                d = saved
+                store = db.one("SELECT * FROM businesses WHERE id = ?", (d["store_business_id"],)) if d["store_business_id"] else None
+                form = dict(d)
+                form["perms_list"] = dealers.perms_of(d["perms"])
+            else:
+                return redirect(url_for("panel.dealer_form", dealer_id=saved["id"]))
+    recent = []
+    st = None
+    if d:
+        recent = db.query("SELECT * FROM orders WHERE business_id = ? AND dealer_id = ? ORDER BY id DESC LIMIT 20",
+                          (g.biz["id"], d["id"]))
+        st = dealers.stats(g.biz["id"]).get(d["id"])
+    return render_template("panel/dealer_form.html", active="dealers", d=d, form=form, store=store, PERMS=dealers.PERMS,
+                           share=share, recent=recent, st=st, login_url=_dealer_login_url(),
+                           store_url=public_store_url(store) if store else None)
+
+
+@bp.post("/dealers/<int:dealer_id>/sync")
+@login_required
+def dealer_sync(dealer_id):
+    _owner_only()
+    d = dealers.get(g.biz["id"], dealer_id)
+    if not d or not d["store_business_id"]:
+        abort(404)
+    n = dealers.sync_catalog(g.biz["id"], d["store_business_id"])
+    flash(f"{n} yeni ürün bayinin mağazasına eklendi." if n else "Bayinin mağazasında eksik ürün yok.", "ok")
+    return redirect(url_for("panel.dealer_form", dealer_id=d["id"]))

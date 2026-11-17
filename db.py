@@ -214,6 +214,25 @@ CREATE TABLE IF NOT EXISTS broadcasts (
   message TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS dealers (
+  id {pk},
+  business_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  code TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  phone TEXT NOT NULL DEFAULT '',
+  city TEXT NOT NULL DEFAULT '',
+  address TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  discount TEXT NOT NULL DEFAULT '0',
+  active INTEGER NOT NULL DEFAULT 1,
+  perms TEXT NOT NULL DEFAULT '',
+  store_business_id INTEGER,
+  user_id INTEGER,
+  last_login TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE (business_id, code)
+);
 CREATE INDEX IF NOT EXISTS ix_payments_order ON payments (order_id);
 CREATE INDEX IF NOT EXISTS ix_orders_biz ON orders (business_id, status);
 CREATE INDEX IF NOT EXISTS ix_orders_cust ON orders (customer_id);
@@ -273,6 +292,17 @@ MIGRATIONS = [
     ("businesses", "paid_until", "TEXT"),
     ("businesses", "is_demo", "INTEGER NOT NULL DEFAULT 0"),
     ("businesses", "self_signup", "INTEGER NOT NULL DEFAULT 0"),
+    # 5. aşama: bayiler
+    ("products", "dealer_price", "TEXT"),
+    ("product_variants", "dealer_price", "TEXT"),
+    ("products", "source_id", "INTEGER"),
+    ("product_variants", "source_id", "INTEGER"),
+    ("orders", "dealer_id", "INTEGER"),
+    ("customers", "dealer_id", "INTEGER"),
+    ("users", "perms", "TEXT"),
+    ("users", "dealer_id", "INTEGER"),
+    ("businesses", "parent_id", "INTEGER"),
+    ("businesses", "dealer_id", "INTEGER"),
 ]
 
 

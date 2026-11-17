@@ -11,7 +11,7 @@
 <ul class="ol">
   {% for b in rows %}
   <li><a class="ol-row" href="{{ url_for('admin.edit', biz_id=b.id) }}">
-    <div class="ol-main"><b>{{ b.name }}{% if not b.active %} · <span class="pill is-cancelled">kapalı</span>{% endif %}{% if b.is_demo %} · <span class="pill">demo</span>{% endif %}{% if b.self_signup and b.orders == 0 %} · <span class="pill is-pending">yeni kayıt</span>{% endif %}</b>
+    <div class="ol-main"><b>{{ b.name }}{% if not b.active %} · <span class="pill is-cancelled">kapalı</span>{% endif %}{% if b.is_demo %} · <span class="pill">demo</span>{% endif %}{% if b.parent_id %} · <span class="pill is-dealer">bayi mağazası</span>{% endif %}{% if b.self_signup and b.orders == 0 %} · <span class="pill is-pending">yeni kayıt</span>{% endif %}</b>
       <span>{{ b.custom_domain or ('/s/' ~ b.slug) }}</span><small>{{ b.owner_email }}</small></div>
     <div class="ol-side"><b>{{ b.orders }} sipariş</b>
       <span class="pill {{ 'pay-none' if b.sub.expired else ('pay-partial' if b.sub.warn else 'pay-paid') }}">{{ b.sub.label }}{% if b.sub.days_left is not none %} · {{ b.sub.days_left if b.sub.days_left >= 0 else 'bitti' }}{% if b.sub.days_left >= 0 %} gün{% endif %}{% endif %}</span>{% if b.pending %}<span class="pill is-pending">{{ b.pending }} bekliyor</span>{% endif %}</div>

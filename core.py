@@ -349,13 +349,19 @@ def payment_options(biz):
     return opts
 
 
-def create_order(biz, data):
+def create_order(biz, data, dealer=None):
     """data: {items:[{id, variant, qty}], name, phone, address, note, payment, fulfilment, zone, ref,
-    birth_day, birth_month, marketing_ok}. Döner: order dict."""
-    if not biz["ordering_open"]:
+    birth_day, birth_month, marketing_ok}. Döner: order dict.
+
+    dealer verilirse bayi siparişi: ad/telefon bayiden, fiyatlar bayi fiyatı, damga/ödül/indirim/teslimat ücreti yok."""
+    if not biz["ordering_open"] and not dealer:
         raise OrderError(biz["closed_message"] or "Şu an sipariş alınmıyor.")
     if not subscription_ok(biz):
         raise OrderError("Bu mağaza şu an sipariş almıyor.")
+    if dealer:
+        import dealers as _dealers
+        data = {**data, "name": dealer["name"], "phone": dealer["phone"], "zone": None, "ref": None,
+                "birth_day": None, "birth_month": None, "marketing_ok": False, "referrer_name": ""}
     name = " ".join(str(data.get("name") or "").split())[:80]
     if len(name) < 2:
         raise OrderError("Ad ve soyad eksik görünüyor, kontrol eder misin?")
@@ -377,7 +383,7 @@ def create_order(biz, data):
     if fulfilment == "delivery" and len(address) < 10:
         raise OrderError("Adres eksik ya da hatalı girilmiş olabilir. Mahalle, sokak ve kapı numarasını kontrol eder misin?")
     zone = None
-    if fulfilment == "delivery":
+    if fulfilment == "delivery" and not dealer:
         zs = zones(biz["id"])
         if zs:
             try:
@@ -423,10 +429,14 @@ def create_order(biz, data):
             if not v:
                 raise OrderError(f"{p['name']} için seçenek seçilmemiş görünüyor. Sayfayı yenileyip bir seçenek seçer misin?")
             price, unit, stock = money(v["price"]), v["name"], v["stock"]
+            if dealer:
+                price = _dealers.price_for(v, dealer)
         else:
             if vid:
                 raise OrderError("Sepet okunamadı. Sayfayı yenileyip tekrar dener misin?")
             v, price, unit, stock = None, money(p["price"]), p["unit"], p["stock"]
+            if dealer:
+                price = _dealers.price_for(p, dealer)
         label = f"{p['name']} ({unit})" if v else p["name"]
         if stock is not None and int(stock) < qty:
             raise OrderError(f"Üzgünüz, {label} için stokta {int(stock)} adet kaldı. Adedi azaltabilir misin?" if int(stock) > 0 else f"Üzgünüz, {label} tükendi.")
@@ -435,16 +445,16 @@ def create_order(biz, data):
         lines.append({"product_id": pid, "variant_id": v["id"] if v else None, "name": p["name"], "unit": unit,
                       "price": str(price), "qty": qty, "line_total": str(lt), "_tracked": stock is not None})
 
-    min_order = money(biz["min_order"])
+    min_order = money(biz["min_order"]) if not dealer else Decimal("0")
     if min_order > 0 and subtotal < min_order:
         raise OrderError(f"En az sipariş tutarı {tl(min_order)}. Sepetine {tl(min_order - subtotal)} değerinde ürün daha ekleyebilir misin?")
 
-    is_first = prior_orders(biz["id"], phone) == 0
+    is_first = prior_orders(biz["id"], phone) == 0 and not dealer
     discount, discount_note = Decimal("0.00"), ""
     if is_first and first_order_offer(biz):
         discount = first_order_discount(biz, subtotal)
         discount_note = first_order_offer(biz)
-    fee = delivery_fee_for(biz, subtotal, fulfilment, zone)
+    fee = delivery_fee_for(biz, subtotal, fulfilment, zone) if not dealer else Decimal("0.00")
     total = subtotal - discount + fee
 
     referrer_id = None
@@ -456,6 +466,8 @@ def create_order(biz, data):
 
     try:
         cust_id = get_or_create_customer(biz["id"], phone, name, address if fulfilment == "delivery" else "")
+        if dealer:
+            db.update("customers", cust_id, {"dealer_id": dealer["id"]})
         extra = {}
         try:
             bd, bm = int(data.get("birth_day") or 0), int(data.get("birth_month") or 0)
@@ -487,7 +499,8 @@ def create_order(biz, data):
             "discount": str(discount), "discount_note": discount_note,
             "zone_name": zone["name"] if zone else "", "referred_by": referrer_id,
             "stock_reserved": 1 if any(ln["_tracked"] for ln in lines) else 0,
-            "counts_for_reward": 0, "created_at": ts, "updated_at": ts,
+            "counts_for_reward": 0, "created_at": ts, "updated_at": ts, "dealer_id": dealer["id"] if dealer else None,
+            "stamps": 0 if dealer else 1,
             "referrer_name": " ".join(str(data.get("referrer_name") or "").split())[:60],
         })
         for ln in lines:
@@ -678,9 +691,10 @@ def set_status(biz, order, new_status, reason="", message=None):
     earned = []
     try:
         stamps_before = counted_orders(order["customer_id"])
+        is_dealer = bool(order.get("dealer_id"))
         if new_status == "approved":
             changes["approved_at"] = now()
-            changes["stamps"] = stamps_for(biz, order)
+            changes["stamps"] = 0 if is_dealer else stamps_for(biz, order)
             changes["counts_for_reward"] = 1 if changes["stamps"] > 0 else 0
         if new_status in ("rejected", "cancelled"):
             changes["reject_reason"] = (reason or "").strip()[:300]
@@ -693,7 +707,7 @@ def set_status(biz, order, new_status, reason="", message=None):
             if order.get("referred_by"):
                 db.execute("UPDATE customers SET referred_by = NULL WHERE id = ?", (order["customer_id"],))
         db.update("orders", order["id"], changes)
-        if new_status == "approved":
+        if new_status == "approved" and not is_dealer:
             if changes["counts_for_reward"]:
                 every = int(biz["reward_every"])
                 after = counted_orders(order["customer_id"])

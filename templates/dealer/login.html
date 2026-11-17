@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Bayi girişi · {{ biz.name }}{% endblock %}
+{% block head %}<meta name="theme-color" content="{{ biz.accent }}"><meta name="robots" content="noindex">
+<style>:root{--accent:{{ biz.accent }}}</style>{% endblock %}
+{% block body_class %}plain store{% endblock %}
+{% block body %}
+<main class="auth">
+  <a class="pn-back" href="{{ g.base }}/">← {{ biz.name }}</a>
+  {% if biz.logo_id %}<img class="st-logo dl-logo" src="/img/{{ biz.logo_id }}" alt="">{% endif %}
+  <h1>Bayi girişi</h1>
+  <p>{{ biz.name }} bayileri için. Kullanıcı kodunu ve şifreni işletmeden alabilirsin.</p>
+  {% include "_flash.html" %}
+  <form method="post" class="card">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <label class="fld"><span>Kullanıcı kodu</span><input name="code" value="{{ code }}" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="30" required autofocus></label>
+    <label class="fld"><span>Şifre</span><input type="password" name="password" autocomplete="current-password" required></label>
+    <button class="btn-primary" type="submit">Giriş yap</button>
+  </form>
+  <p class="muted">Şifreni unuttuysan {{ biz.name }} ile iletişime geç{% if biz.phone %} · <a href="tel:+90{{ biz.phone }}">{{ pretty_phone(biz.phone) }}</a>{% endif %}.</p>
+</main>
+{% endblock %}

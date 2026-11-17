@@ -3,7 +3,7 @@
 {% block content %}
 <div class="pn-head" id="orders" data-latest="{{ latest }}" data-poll="{{ url_for('panel.poll') }}">
   <h1>Siparişler</h1>
-  <span class="pn-head-r"><button type="button" class="btn-sm" id="kasa-btn">🔔 Sesli mod</button><a class="btn-sm" href="{{ url_for('panel.reports') }}">📊 Rapor</a><a class="btn-sm" href="{{ url_for('panel.orders_cleanup') }}" title="Deneme siparişlerini sil">🗑 Sil</a><span class="pn-live" title="Sayfa kendiliğinden yenilenir"><i></i>Canlı</span></span>
+  <span class="pn-head-r"><button type="button" class="btn-sm" id="kasa-btn">🔔 Sesli mod</button>{% if can('reports') %}<a class="btn-sm" href="{{ url_for('panel.reports') }}">📊 Rapor</a>{% endif %}<a class="btn-sm" href="{{ url_for('panel.orders_cleanup') }}" title="Deneme siparişlerini sil">🗑 Sil</a><span class="pn-live" title="Sayfa kendiliğinden yenilenir"><i></i>Canlı</span></span>
 </div>
 {% if show_steps %}
 <section class="card steps-card" id="kurulum">
@@ -19,12 +19,18 @@
   <a href="{{ url_for('panel.orders', tab=key) }}" class="{{ 'is-on' if tab == key }}">{{ label }}{% if key != 'done' and counts[key] %} <em>{{ counts[key] }}</em>{% endif %}</a>
   {% endfor %}
 </nav>
+{% if tab == 'dealer' and dealer_list %}
+<form method="get" class="dl-filter"><input type="hidden" name="tab" value="dealer">
+  <select name="bayi" onchange="this.form.submit()" aria-label="Bayi seç"><option value="">Tüm bayiler</option>{% for d in dealer_list %}<option value="{{ d.id }}" {% if d.id == dealer_filter %}selected{% endif %}>{{ d.name }}</option>{% endfor %}</select>
+  {% if dealer_due %}<span class="pill pay-none">Bayi borcu: {{ tl(dealer_due) }}</span>{% endif %}
+</form>
+{% endif %}
 <p class="pn-new" id="pn-new" hidden><a href="{{ url_for('panel.orders', tab='pending') }}">Yeni sipariş geldi · yenile</a></p>
 
 {% if not rows %}
 <div class="pn-empty">
   {% if tab == 'pending' %}<p><b>Onay bekleyen sipariş yok.</b></p><p>Yeni sipariş gelince bu sayfa kendiliğinden yenilenir ve bildirimi açtıysan telefonuna da düşer.</p>
-  {% elif tab == 'active' %}<p>Hazırlanan sipariş yok.</p>{% else %}<p>Henüz biten sipariş yok.</p>{% endif %}
+  {% elif tab == 'active' %}<p>Hazırlanan sipariş yok.</p>{% elif tab == 'dealer' %}<p><b>Bayi siparişi yok.</b></p><p><a href="{{ url_for('panel.dealers') }}">Bayiler</a> sayfasından bayi ekleyebilirsin.</p>{% else %}<p>Henüz biten sipariş yok.</p>{% endif %}
 </div>
 {% else %}
 <ul class="ol">
@@ -32,7 +38,7 @@
   <li>
     <a class="ol-row is-{{ o.status }}" href="{{ url_for('panel.order', order_id=o.id) }}">
       <div class="ol-main">
-        <b>#{{ o.id }} · {{ o.customer_name }}</b>
+        <b>#{{ o.id }} · {{ o.customer_name }}{% if o.dealer_id %} <span class="pill is-dealer">Bayi</span>{% endif %}</b>
         <span>{{ FULFILMENT[o.fulfilment] }} · {{ PAYMENT[o.payment] }}</span>
         <small>{{ local_time(o.created_at) }}{% if o.customer_id in has_reward %} · <span class="tag-gift">🎁 ödülü var</span>{% endif %}{% if o.referrer_name %} · 👤 {{ o.referrer_name }}{% endif %}</small>
       </div>

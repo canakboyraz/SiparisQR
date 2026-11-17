@@ -1224,3 +1224,158 @@ def test_report_stock_overview(app):
     r = c.post("/panel/stock/quick", data={"csrf": t, "product_id": p1, "qty": "abc"}, follow_redirects=True)
     assert "anlaşılamadı" in r.get_data(as_text=True) and core.current_stock(p1) == 15
     assert c.post("/panel/stock/quick", data={"csrf": t, "product_id": 99999, "qty": "1"}).status_code == 404
+
+
+def _dealer_order(client, base, items, **kw):
+    body = {"items": items, "payment": "iban", "fulfilment": "delivery", "address": "Sanayi Sitesi 4. Blok No 12 Ankara",
+            "note": "", "name": "Sahte", "phone": "0500 000 00 00"}
+    body.update(kw)
+    return client.post(f"{base}/bayi/api/order", data=json.dumps(body), content_type="application/json")
+
+
+def test_dealers_full_flow(app):
+    c, biz, (p1, p2, p3), t = _owner(app)
+    # Bayi yokken mağazada "Bayi girişi" görünmez, ürün formunda bayi fiyatı alanı yok
+    assert "Bayi girişi" not in app.test_client().get("/s/ege-zeytin/").get_data(as_text=True)
+    assert 'name="dealer_price"' not in c.get(f"/panel/products/{p1}").get_data(as_text=True)
+
+    # Bayi ekle: hatalı bilgiler
+    r = c.post("/panel/dealers/new", data={"csrf": t, "name": "A", "code": "x", "password": "123", "phone": "12"},
+               follow_redirects=True)
+    html = r.get_data(as_text=True)
+    assert "Bayi adı eksik" in html and "Kullanıcı kodu" in html and "en az 6" in html and "telefonu" in html
+    # Doğru bilgiler + kendi mağazası + yetkiler (ürünler, rapor)
+    r = c.post("/panel/dealers/new", data={"csrf": t, "name": "Ahmet Yılmaz", "code": "ankara01", "password": "bayi1234",
+               "phone": "0533 444 55 66", "city": "Ankara", "address": "Sanayi Sitesi 4. Blok No 12 Ankara",
+               "discount": "10", "active": "1", "store": "1", "store_name": "Ahmet Zeytin Evi",
+               "perms": ["products", "reports"]})
+    html = r.get_data(as_text=True)
+    assert "Bayi eklendi" in html and "WhatsApp" in html and "ankara01" in html and "bayi1234" in html
+    d = db.one("SELECT * FROM dealers WHERE code = 'ankara01'")
+    assert d["store_business_id"] and d["user_id"] and d["perms"] == "products,reports"
+    # Aynı kod tekrar kullanılamaz
+    r = c.post("/panel/dealers/new", data={"csrf": t, "name": "Başka", "code": "ANKARA01", "password": "bayi1234",
+               "phone": "0533 444 55 67"}, follow_redirects=True)
+    assert "başka bir bayide" in r.get_data(as_text=True)
+
+    # Bayi fiyatı: ürün formunda alan açıldı; Siyah Zeytin bayiye 300, Zeytinyağı boş (normal fiyat)
+    assert 'name="dealer_price"' in c.get(f"/panel/products/{p1}").get_data(as_text=True)
+    r = c.post(f"/panel/products/{p1}", data={"csrf": t, "name": "Siyah Zeytin", "price": "350", "unit": "1 kg",
+               "dealer_price": "300", "available": "1", "visible": "1"}, follow_redirects=True)
+    assert "Ürün kaydedildi" in r.get_data(as_text=True)
+    r = c.post(f"/panel/products/{p1}", data={"csrf": t, "name": "Siyah Zeytin", "price": "350", "dealer_price": "abc",
+               "available": "1", "visible": "1"}, follow_redirects=True)
+    assert "bayi fiyatı anlaşılamadı" in r.get_data(as_text=True)
+
+    # Müşteri tarafı: Bayi girişi linki görünür
+    shop = app.test_client()
+    assert "Bayi girişi" in shop.get("/s/ege-zeytin/").get_data(as_text=True)
+    assert shop.get("/s/ege-zeytin/bayi/").status_code == 302           # giriş yapmadan sipariş ekranı yok
+    # Hatalı şifre
+    tk = csrf(shop, "/s/ege-zeytin/bayi/giris")
+    r = shop.post("/s/ege-zeytin/bayi/giris", data={"csrf": tk, "code": "ankara01", "password": "yanlis"})
+    assert r.status_code == 401 and "hatalı" in r.get_data(as_text=True)
+    r = shop.post("/s/ege-zeytin/bayi/giris", data={"csrf": tk, "code": "ANKARA01", "password": "bayi1234"})
+    assert r.status_code == 302
+    page = shop.get("/s/ege-zeytin/bayi/").get_data(as_text=True)
+    # Siyah Zeytin: 300 bayi fiyatı - %10 = 270; Zeytinyağı: 1800 - %10 = 1620; damga/kampanya yok
+    assert "Ahmet Yılmaz" in page and "270 TL" in page and "1.620 TL" in page and "Ek %10" in page
+    assert "1 kg zeytin" not in page and "Bizi kim önerdi" not in page and "Mağazam" in page
+
+    # Bayi siparişi: ad/telefon bayiden, teslimat ücreti yok (normalde 50 TL), damga yok
+    r = _dealer_order(shop, "/s/ege-zeytin", [{"id": p1, "qty": 2}, {"id": p2, "qty": 1}])
+    res = r.get_json()
+    assert res["ok"], res
+    o = core.get_order(res["id"])
+    assert o["dealer_id"] == d["id"] and o["customer_name"] == "Ahmet Yılmaz" and o["customer_phone"] == "5334445566"
+    assert core.money(o["total"]) == core.money("2160") and core.money(o["delivery_fee"]) == 0
+    assert app.sent and "Bayi siparişi" in app.sent[-1][1]["title"]
+    # Normal müşteri aynı ürünleri normal fiyattan alır
+    r = order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "qty": 2}])
+    assert core.money(core.get_order(r.get_json()["id"])["total"]) == core.money("750")
+
+    # Panel: Bayi sekmesi ve rozet; onayla -> damga yok
+    page = c.get("/panel/orders?tab=dealer").get_data(as_text=True)
+    assert f"#{o['id']}" in page and "Bayi" in page
+    page = c.get(f"/panel/orders/{o['id']}").get_data(as_text=True)
+    assert "Bayi siparişi" in page and "Ahmet Yılmaz" in page
+    c.post(f"/panel/orders/{o['id']}/status", data={"csrf": t, "status": "approved"})
+    o = core.get_order(o["id"])
+    assert o["status"] == "approved" and o["stamps"] == 0 and not o["counts_for_reward"]
+    assert not db.query("SELECT * FROM rewards WHERE earned_order_id = ?", (o["id"],))
+    # Bayi müşterisi müşteri listesinde görünmez
+    assert "Ahmet Yılmaz" not in c.get("/panel/customers").get_data(as_text=True)
+    # Rapor: bayi satışları; bayiler listesi borç
+    rep = c.get("/panel/reports").get_data(as_text=True)
+    assert "Bayi satışları" in rep and "Ahmet Yılmaz" in rep
+    lst = c.get("/panel/dealers").get_data(as_text=True)
+    assert "Ahmet Yılmaz" in lst and "2.160 TL" in lst and "borç" in lst
+
+    # Bayi: siparişlerim (onaylandı, ödenmemiş)
+    page = shop.get("/s/ege-zeytin/bayi/siparisler").get_data(as_text=True)
+    assert f"#{o['id']}" in page and "Onaylandı" in page and "2.160 TL" in page and "ödenmedi" in page
+
+    # Bayinin kendi mağazası: ürünler kopyalandı, normal fiyatla
+    store = db.one("SELECT * FROM businesses WHERE id = ?", (d["store_business_id"],))
+    assert store["parent_id"] == biz["id"] and store["name"] == "Ahmet Zeytin Evi"
+    sp = app.test_client().get(f"/s/{store['slug']}/").get_data(as_text=True)
+    assert "Siyah Zeytin" in sp and "Zeytinyağı" in sp and "Bayi girişi" not in sp
+    # Mağazam -> panel; yetkiler: ürünler + rapor açık, kampanya/ayarlar/bayiler kapalı
+    tk = csrf(shop, "/s/ege-zeytin/bayi/")
+    r = shop.post("/s/ege-zeytin/bayi/magazam", data={"csrf": tk})
+    assert r.status_code == 302 and "/panel/orders" in r.headers["Location"]
+    page = shop.get("/panel/orders").get_data(as_text=True)
+    assert "Ahmet Zeytin Evi" in page and "Toptan" in page and "Kampanya" not in page and "Kurulum" not in page
+    assert shop.get("/panel/products").status_code == 200
+    assert shop.get("/panel/reports").status_code == 200
+    assert shop.get("/panel/campaign").status_code == 403
+    assert shop.get("/panel/settings").status_code == 403
+    assert shop.get("/panel/dealers").status_code == 403
+    # Bayi mağazasına normal müşteri siparişi verilebilir (kapıda nakit)
+    sprod = db.one("SELECT id FROM products WHERE business_id = ? AND name = 'Siyah Zeytin'", (store["id"],))["id"]
+    r = order(app.test_client(), f"/s/{store['slug']}", [{"id": sprod, "qty": 1}], payment="cash")
+    assert r.get_json()["ok"], r.get_json()
+    assert db.one("SELECT COUNT(*) AS n FROM orders WHERE business_id = ?", (store["id"],))["n"] == 1
+
+    # Yetki güncelle: kampanya aç -> bayi girebilir
+    c.post(f"/panel/dealers/{d['id']}", data={"csrf": t, "name": "Ahmet Yılmaz", "code": "ankara01", "phone": "05334445566",
+           "discount": "10", "active": "1", "perms": ["products", "reports", "campaign"], "store_name": "Ahmet Zeytin Evi"})
+    assert shop.get("/panel/campaign").status_code == 200
+
+    # Yeni ürün ekle, bayi mağazasına kopyala
+    db.insert("products", {"business_id": biz["id"], "name": "Kırma Zeytin", "price": "400", "created_at": core.now()})
+    db.commit()
+    r = c.post(f"/panel/dealers/{d['id']}/sync", data={"csrf": t}, follow_redirects=True)
+    assert "1 yeni ürün" in r.get_data(as_text=True)
+
+    # Bayiyi pasifleştir: giriş yapamaz, mağazası kapanır
+    c.post(f"/panel/dealers/{d['id']}", data={"csrf": t, "name": "Ahmet Yılmaz", "code": "ankara01",
+           "phone": "05334445566", "discount": "10", "perms": ["products"]})
+    assert app.test_client().get(f"/s/{store['slug']}/").status_code == 404
+    other = app.test_client()
+    tk = csrf(other, "/s/ege-zeytin/bayi/giris")
+    assert other.post("/s/ege-zeytin/bayi/giris", data={"csrf": tk, "code": "ankara01", "password": "bayi1234"}).status_code == 401
+
+
+def test_dealer_variant_price_and_isolation(app):
+    c, biz, (p1, p2, p3), t = _owner(app)
+    c.post("/panel/dealers/new", data={"csrf": t, "name": "Can Bayi", "code": "izmit01", "password": "bayi1234",
+           "phone": "0544 111 22 33", "active": "1"})
+    r = c.post(f"/panel/products/{p1}", data={"csrf": t, "name": "Siyah Zeytin", "available": "1", "visible": "1",
+               "v_id": ["", ""], "v_name": ["500 g", "1 kg"], "v_price": ["200", "350"], "v_dprice": ["150", ""],
+               "v_stock": ["", ""]}, follow_redirects=True)
+    assert "Ürün kaydedildi" in r.get_data(as_text=True)
+    vs = {v["name"]: v for v in core.variants_by_product([p1])[p1]}
+    assert vs["500 g"]["dealer_price"] == "150.00" and vs["1 kg"]["dealer_price"] is None
+    shop = app.test_client()
+    tk = csrf(shop, "/s/ege-zeytin/bayi/giris")
+    shop.post("/s/ege-zeytin/bayi/giris", data={"csrf": tk, "code": "izmit01", "password": "bayi1234"})
+    r = _dealer_order(shop, "/s/ege-zeytin", [{"id": p1, "variant": vs["500 g"]["id"], "qty": 2},
+                                               {"id": p1, "variant": vs["1 kg"]["id"], "qty": 1}], fulfilment="pickup")
+    o = core.get_order(r.get_json()["id"])
+    assert core.money(o["total"]) == core.money("650")      # 2×150 + 350
+    # Başka işletmenin bayi oturumu bu işletmede geçmez
+    make_biz(app.test_client(), name="Diğer", slug="diger-dukkan", email="d@d.com")
+    assert shop.get("/s/diger-dukkan/bayi/").status_code == 302
+    # Bayi siparişi API'si girişsiz çalışmaz
+    assert _dealer_order(app.test_client(), "/s/ege-zeytin", [{"id": p1, "variant": vs["1 kg"]["id"], "qty": 1}]).status_code == 302

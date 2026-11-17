@@ -1,0 +1,87 @@
+{% extends "panel/layout.html" %}
+{% block ptitle %}{{ d.name if d else 'Yeni bayi' }}{% endblock %}
+{% block content %}
+<a class="pn-back" href="{{ url_for('panel.dealers') }}">← Bayiler</a>
+<div class="pn-head"><h1>{{ d.name if d else 'Yeni bayi' }}</h1></div>
+
+{% if share %}
+<section class="card">
+  <h2>Giriş bilgilerini gönder</h2>
+  <p class="muted">Bayine giriş adresini, kullanıcı kodunu ve şifresini gönder. Şifre bir daha gösterilmez.</p>
+  <pre class="dl-share">{{ share.text }}</pre>
+  <a class="btn-primary btn-big" href="{{ share.wa }}" target="_blank" rel="noopener">WhatsApp'tan gönder</a>
+</section>
+{% endif %}
+
+{% if d and st %}
+<section class="kpi">
+  <div class="card"><span>Toplam alım</span><b>{{ tl(st.total) }}</b><small>{{ st.orders }} sipariş</small></div>
+  <div class="card"><span>Ödenmemiş</span><b>{{ tl(st.due) }}</b><small>{{ st.pending }} onay bekliyor</small></div>
+</section>
+{% endif %}
+
+<form method="post" class="card form" autocomplete="off">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <h2>Bayi bilgileri</h2>
+  <div class="row2">
+    <label class="fld"><span>Bayi / kişi adı</span><input name="name" value="{{ form.name or '' }}" maxlength="80" required placeholder="ör. Ahmet Yılmaz – Ankara"></label>
+    <label class="fld"><span>Telefon</span><input name="phone" type="tel" inputmode="tel" value="{{ pretty_phone(form.phone) if form.phone and form.phone|length == 10 else (form.phone or '') }}" placeholder="05XX XXX XX XX" required></label>
+  </div>
+  <div class="row2">
+    <label class="fld"><span>Kullanıcı kodu</span><input name="code" value="{{ form.code or '' }}" maxlength="30" required autocapitalize="none" spellcheck="false" placeholder="ör. ankara01"><small>Bayi bununla giriş yapar.</small></label>
+    <label class="fld"><span>{{ 'Yeni şifre' if d else 'Şifre' }}</span><input name="password" type="text" autocomplete="new-password" minlength="6" {% if not d %}required{% endif %} placeholder="{{ 'değiştirmeyeceksen boş bırak' if d else 'en az 6 karakter' }}"></label>
+  </div>
+  <div class="row2">
+    <label class="fld"><span>Şehir / bölge <small>(isteğe bağlı)</small></span><input name="city" value="{{ form.city or '' }}" maxlength="60" placeholder="ör. İzmit"></label>
+    <label class="fld"><span>Ek bayi indirimi (%)</span><input name="discount" inputmode="decimal" value="{{ (form.discount or '0')|replace('.', ',') }}" placeholder="0"><small>Bayi fiyatının üstüne bu bayiye özel indirim. 0 = yok.</small></label>
+  </div>
+  <label class="fld"><span>Teslimat adresi <small>(siparişte otomatik dolar)</small></span><textarea name="address" rows="2" maxlength="400">{{ form.address or '' }}</textarea></label>
+  <label class="fld"><span>Not <small>(sadece sen görürsün)</small></span><textarea name="note" rows="2" maxlength="400">{{ form.note or '' }}</textarea></label>
+  <label class="check"><input type="checkbox" name="active" value="1" {% if form.active %}checked{% endif %}> Aktif (kapalıysa giriş yapamaz{% if store %}, mağazası da kapanır{% endif %})</label>
+
+  <h2>Kendi mağazası</h2>
+  {% if store %}
+  <p class="muted">Bayinin kendi adına satış yaptığı mağaza: <a href="{{ store_url }}" target="_blank" rel="noopener">{{ store_url }}</a>. Bayi, giriş yaptıktan sonra <b>Mağazam</b>'a dokunarak paneline geçer.</p>
+  <label class="fld"><span>Mağaza adı</span><input name="store_name" value="{{ store.name }}" maxlength="80"></label>
+  {% else %}
+  <label class="check"><input type="checkbox" name="store" value="1"> Bu bayiye kendi müşterilerine satış yapacağı ayrı bir mağaza aç</label>
+  <label class="fld"><span>Mağaza adı <small>(boşsa "{{ biz.name }} · bayi adı")</small></span><input name="store_name" maxlength="80"></label>
+  <p class="muted"><small>Ürünlerin fotoğraf ve açıklamalarıyla kopyalanır; stok bayinin mağazasında takip edilmez. Ödeme varsayılan olarak kapıda nakittir, bayi kendi IBAN'ını Ayarlar'dan girebilir (yetki verirsen).</small></p>
+  {% endif %}
+
+  <h2>Bayi panelinde açık olacaklar</h2>
+  <p class="muted"><small>Bayi kendi mağazasının siparişlerini her zaman görür ve yönetir. Aşağıda seçtiklerin de açılır.</small></p>
+  <div class="dealer-perms">
+    {% for key, (label, desc, _) in PERMS.items() %}
+    <label><input type="checkbox" name="perms" value="{{ key }}" {% if key in form.perms_list %}checked{% endif %}><span><b>{{ label }}</b><small>{{ desc }}</small></span></label>
+    {% endfor %}
+  </div>
+  <button class="btn-primary btn-big" type="submit">{{ 'Kaydet' if d else 'Bayiyi ekle' }}</button>
+</form>
+
+{% if store %}
+<form method="post" action="{{ url_for('panel.dealer_sync', dealer_id=d.id) }}" class="card">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <h2>Yeni ürünleri bayiye ekle</h2>
+  <p class="muted">Senin mağazana sonradan eklediğin ürünler bayinin mağazasına kopyalanır. Bayinin var olan ürünlerine dokunulmaz.</p>
+  <button class="btn-sm" type="submit">Eksik ürünleri kopyala</button>
+</form>
+{% endif %}
+
+{% if d %}
+<section class="card">
+  <div class="pay-head"><h2>Son siparişleri</h2><a class="btn-link" href="{{ url_for('panel.orders', tab='dealer', bayi=d.id) }}">Tümü</a></div>
+  {% if recent %}
+  <ul class="ol">
+    {% for o in recent %}
+    <li><a class="ol-row is-{{ o.status }}" href="{{ url_for('panel.order', order_id=o.id) }}">
+      <div class="ol-main"><b>#{{ o.id }}</b><small>{{ local_time(o.created_at) }} · {{ PAYMENT[o.payment] }}</small></div>
+      <div class="ol-side"><b>{{ tl(o.total) }}</b><span class="pill is-{{ o.status }}">{{ STATUS[o.status] }}</span>
+        {% if o.status not in ('rejected', 'cancelled') %}{% set ps = pay_state(o) %}<span class="pill pay-{{ ps.state }}">{{ ps.label }}</span>{% endif %}</div>
+    </a></li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="muted">Henüz sipariş vermedi.</p>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

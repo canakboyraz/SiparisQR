@@ -235,7 +235,7 @@
 
   // ── Müşteri bilgilerini hatırla ───────────────────────────────────────────
   var form = $("st-form"), ME = "musteri";
-  try {
+  if (!C.dealer) try {
     var me = JSON.parse(localStorage.getItem(ME) || "{}");
     ["name", "phone", "address"].forEach(function (k) { if (me[k] && form.elements[k]) form.elements[k].value = me[k]; });
     if (me.name && form.elements.kvkk) form.elements.kvkk.checked = true;
@@ -274,7 +274,7 @@
       .then(function (res) {
         if (!res.ok) throw new Error(res.error || "Sipariş gönderilemedi. Birazdan tekrar dener misin?");
         try {
-          localStorage.setItem(ME, JSON.stringify({ name: body.name, phone: body.phone, address: body.address }));
+          if (!C.dealer) localStorage.setItem(ME, JSON.stringify({ name: body.name, phone: body.phone, address: body.address }));
           localStorage.removeItem(C.cartKey);
           localStorage.removeItem(C.refKey);
           var list = mine(); list.unshift(res.url); localStorage.setItem(mineKey(), JSON.stringify(list.slice(0, 20)));
@@ -283,7 +283,7 @@
       })
       .catch(function (err) {
         showErr(err.message || "Bağlantı sorunu oldu. Tekrar dener misin?");
-        btn.disabled = false; btn.textContent = "Siparişi gönder";
+        btn.disabled = false; btn.textContent = C.dealer ? "Bayi siparişini gönder" : "Siparişi gönder";
       });
   });
 

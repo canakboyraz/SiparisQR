@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Siparişlerim · Bayi · {{ biz.name }}{% endblock %}
+{% block head %}<meta name="theme-color" content="{{ biz.accent }}"><meta name="robots" content="noindex">
+<style>:root{--accent:{{ biz.accent }}}</style>{% endblock %}
+{% block body_class %}store{% endblock %}
+{% block body %}
+<div class="st-dealerbar">
+  <div><small>Bayi girişi</small><b>{{ dealer.name }}</b></div>
+  <nav>
+    <a href="{{ g.base }}/bayi/">Sipariş ver</a>
+    {% if dealer_store %}<form method="post" action="{{ g.base }}/bayi/magazam"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button type="submit">Mağazam</button></form>{% endif %}
+    <form method="post" action="{{ g.base }}/bayi/cikis"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button type="submit">Çıkış</button></form>
+  </nav>
+</div>
+<main class="dl-main">
+  <h1>Siparişlerim</h1>
+  {% if new_id %}<p class="flash is-ok">Siparişin alındı (#{{ new_id }}). {{ biz.name }} onaylayınca burada görünecek.</p>{% endif %}
+  <div class="dl-due {{ 'is-due' if due > 0 }}">
+    <span>Ödenmemiş toplam</span><b>{{ tl(due) }}</b>
+    {% if due > 0 and biz.iban %}<small>IBAN: {{ pretty_iban(biz.iban) }}{% if biz.iban_holder %} · {{ biz.iban_holder }}{% endif %}</small>{% endif %}
+  </div>
+  {% if not rows %}
+  <div class="pn-empty"><p><b>Henüz siparişin yok.</b></p><a class="btn-primary" href="{{ g.base }}/bayi/">Sipariş ver</a></div>
+  {% else %}
+  <ul class="dl-list">
+    {% for o in rows %}{% set ps = pay_state(o) %}
+    <li class="{{ 'is-new' if o.id == new_id }}">
+      <div class="dl-row">
+        <b>#{{ o.id }} · {{ tl(o.total) }}</b>
+        <span class="pill is-{{ o.status }}">{{ STATUS[o.status] }}</span>
+      </div>
+      <small>{{ local_time(o.created_at) }} · {{ PAYMENT[o.payment] }}{% if o.status in ('approved','on_the_way','delivered') %} · {% if ps.remaining > 0 %}<b class="dl-rem">{{ tl(ps.remaining) }} ödenmedi</b>{% else %}ödendi ✓{% endif %}{% endif %}</small>
+      {% if lines.get(o.id) %}<p class="dl-items">{% for l in lines[o.id] %}{{ l.qty }}× {{ l.name }}{% if l.unit %} ({{ l.unit }}){% endif %}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+      {% if o.owner_message %}<p class="dl-msg">💬 {{ o.owner_message }}</p>{% endif %}
+      {% if o.status == 'rejected' and o.reject_reason %}<p class="dl-msg">Neden: {{ o.reject_reason }}</p>{% endif %}
+      {% if o.cargo_tracking %}<p class="dl-msg">📦 {{ o.cargo_company }} {{ o.cargo_tracking }}{% if o.cargo_url %} · <a href="{{ o.cargo_url }}" rel="noopener" target="_blank">takip</a>{% endif %}</p>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</main>
+{% endblock %}

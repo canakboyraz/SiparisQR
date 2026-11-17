@@ -43,6 +43,14 @@
   <div class="card"><span>Tekrar gelen</span><b>%{{ s.repeat_pct }}</b><small>{{ s.ret_c }} tekrar · {{ s.new_c }} yeni müşteri</small></div>
 </section>
 
+{% if dsales %}
+<section class="card">
+  <div class="pay-head"><h2>Bayi satışları</h2><a class="btn-link" href="{{ url_for('panel.dealers') }}">Bayiler</a></div>
+  <p class="muted"><small>Cironun {{ tl(s.dealer_cents) }}'i bayilerden, {{ tl(s.retail_cents) }}'i perakende müşterilerden.</small></p>
+  <ol class="top">{% for r in dsales %}<li><span><a href="{{ url_for('panel.orders', tab='dealer', bayi=r.id) }}">{{ r.name }}</a></span><small>{{ r.n }} sipariş{% if r.due %} · <b class="dl-rem">{{ tl(from_cents(r.due)) }} borç</b>{% endif %}</small><b>{{ tl(from_cents(r.cents)) }}</b></li>{% endfor %}</ol>
+</section>
+{% endif %}
+
 <section class="card">
   <h2>Günlük ciro</h2>
   {% if s.orders %}
