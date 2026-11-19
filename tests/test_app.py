@@ -1238,7 +1238,7 @@ def test_dealers_full_flow(app):
     c, biz, (p1, p2, p3), t = _owner(app)
     # Bayi yokken mağazada "Bayi girişi" görünmez, ürün formunda bayi fiyatı alanı yok
     assert "Bayi girişi" not in app.test_client().get("/s/ege-zeytin/").get_data(as_text=True)
-    assert 'name="dealer_price"' not in c.get(f"/panel/products/{p1}").get_data(as_text=True)
+    assert 'name="dealer_price"' in c.get(f"/panel/products/{p1}").get_data(as_text=True)
 
     # Bayi ekle: hatalı bilgiler
     r = c.post("/panel/dealers/new", data={"csrf": t, "name": "A", "code": "x", "password": "123", "phone": "12"},

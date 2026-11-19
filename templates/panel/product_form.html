@@ -22,7 +22,7 @@
     <label class="fld"><span>Fiyat (TL)</span><input name="price" inputmode="decimal" value="{{ (p.price|replace('.', ',')|replace(',00', '')) if p and p.price else '' }}" placeholder="350"></label>
     <label class="fld"><span>Birim / miktar</span><input name="unit" value="{{ p.unit if p else '' }}" maxlength="40" placeholder="ör. 1 kg"></label>
     <label class="fld"><span>Stok adedi</span><input name="stock" inputmode="numeric" value="{{ p.stock if p and p.stock is not none else '' }}" placeholder="boş = sınırsız"></label>
-    {% if show_dealer %}<label class="fld"><span>Bayi fiyatı (TL)</span><input name="dealer_price" inputmode="decimal" value="{{ (p.dealer_price|replace('.', ',')|replace(',00', '')) if p.dealer_price else '' }}" placeholder="boş = normal fiyat"></label>{% endif %}
+    {% if show_dealer %}<label class="fld"><span>Bayi fiyatı (TL)</span><input name="dealer_price" inputmode="decimal" title="Bayilerin göreceği fiyat. Boş = normal fiyat. Bayiye özel fiyat: Bayiler sayfası" value="{{ (p.dealer_price|replace('.', ',')|replace(',00', '')) if p.dealer_price else '' }}" placeholder="boş = normal fiyat"></label>{% endif %}
   </div>
 
   <div class="fld vr">

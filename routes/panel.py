@@ -513,8 +513,7 @@ def product_form(product_id=None):
                     for i, n, pr, st, dp in zip(f.getlist("v_id"), f.getlist("v_name"), f.getlist("v_price"),
                                                 f.getlist("v_stock"), dps)
                     if n or pr]
-    show_dealer = not g.biz.get("parent_id") and g.perms is None and bool(
-        db.one("SELECT id FROM dealers WHERE business_id = ? LIMIT 1", (g.biz["id"],)))
+    show_dealer = not g.biz.get("parent_id") and g.perms is None
     return render_template("panel/product_form.html", active="products", p=p, cats=cats, variants=variants,
                            show_dealer=show_dealer)
 
