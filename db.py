@@ -233,6 +233,15 @@ CREATE TABLE IF NOT EXISTS dealers (
   created_at TEXT NOT NULL,
   UNIQUE (business_id, code)
 );
+CREATE TABLE IF NOT EXISTS dealer_prices (
+  id {pk},
+  business_id INTEGER NOT NULL,
+  dealer_id INTEGER NOT NULL,
+  product_id INTEGER NOT NULL,
+  variant_id INTEGER,
+  price TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_dealer_prices ON dealer_prices(dealer_id);
 CREATE INDEX IF NOT EXISTS ix_payments_order ON payments (order_id);
 CREATE INDEX IF NOT EXISTS ix_orders_biz ON orders (business_id, status);
 CREATE INDEX IF NOT EXISTS ix_orders_cust ON orders (customer_id);

@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import core  # noqa: E402
 import db  # noqa: E402
+import dealers  # noqa: E402
 import webpush  # noqa: E402
 
 IBAN = "TR330006100519786457841326"   # geçerli örnek IBAN (mod 97)
@@ -1397,3 +1398,45 @@ def test_dealer_code_turkish(app):
         shop = app.test_client()
         tk = csrf(shop, "/s/ege-zeytin/bayi/giris")
         assert shop.post("/s/ege-zeytin/bayi/giris", data={"csrf": tk, "code": typed, "password": "bayi1234"}).status_code == 302, typed
+
+
+def test_dealer_special_prices(app):
+    c, biz, (p1, p2, p3), t = _owner(app)
+    for code, phone in (("izmit01", "0532 000 00 01"), ("ankara01", "0532 000 00 02")):
+        c.post("/panel/dealers/new", data={"csrf": t, "name": code.title(), "code": code, "password": "bayi1234",
+               "phone": phone, "active": "1", "discount": "10" if code == "ankara01" else "0"})
+    d1 = db.one("SELECT * FROM dealers WHERE code = 'izmit01'")
+    d2 = db.one("SELECT * FROM dealers WHERE code = 'ankara01'")
+    db.update("products", p1, {"dealer_price": "300"})
+    db.commit()
+    page = c.get(f"/panel/dealers/{d1['id']}/prices").get_data(as_text=True)
+    assert "Siyah Zeytin" in page and "Zeytinyağı" in page and 'name="sp_%d_0"' % p1 in page
+    # Hatalı fiyat
+    r = c.post(f"/panel/dealers/{d1['id']}/prices", data={"csrf": t, f"sp_{p1}_0": "abc"}, follow_redirects=True)
+    assert "Kaydedilemedi" in r.get_data(as_text=True)
+    # İzmit bayisine Siyah Zeytin 250, Zeytinyağı boş
+    r = c.post(f"/panel/dealers/{d1['id']}/prices", data={"csrf": t, f"sp_{p1}_0": "250", f"sp_{p2}_0": ""},
+               follow_redirects=True)
+    assert "1 ürüne özel fiyat" in r.get_data(as_text=True)
+    shop1, shop2 = app.test_client(), app.test_client()
+    for cl, code in ((shop1, "izmit01"), (shop2, "ankara01")):
+        tk = csrf(cl, "/s/ege-zeytin/bayi/giris")
+        cl.post("/s/ege-zeytin/bayi/giris", data={"csrf": tk, "code": code, "password": "bayi1234"})
+    # İzmit: özel 250 (indirim yok), Zeytinyağı normal 1800
+    r = _dealer_order(shop1, "/s/ege-zeytin", [{"id": p1, "qty": 2}, {"id": p2, "qty": 1}])
+    assert core.money(core.get_order(r.get_json()["id"])["total"]) == core.money("2300")
+    # Ankara: özel fiyatı yok -> genel bayi 300 - %10 = 270; Zeytinyağı 1800 - %10 = 1620
+    r = _dealer_order(shop2, "/s/ege-zeytin", [{"id": p1, "qty": 2}, {"id": p2, "qty": 1}])
+    assert core.money(core.get_order(r.get_json()["id"])["total"]) == core.money("2160")
+    assert "250 TL" in shop1.get("/s/ege-zeytin/bayi/").get_data(as_text=True)
+    # Kopyala: Ankara'ya İzmit'in listesi -> özel fiyat aynen (indirim uygulanmaz)
+    r = c.post(f"/panel/dealers/{d2['id']}/prices", data={"csrf": t, "copy_from": d1["id"]}, follow_redirects=True)
+    assert "1 özel fiyatı" in r.get_data(as_text=True)
+    r = _dealer_order(shop2, "/s/ege-zeytin", [{"id": p1, "qty": 1}])
+    assert core.money(core.get_order(r.get_json()["id"])["total"]) == core.money("250")
+    # Listede ve bayi sayfasında sayı görünür; boşaltınca kalkar
+    assert "1 özel fiyat" in c.get("/panel/dealers").get_data(as_text=True)
+    c.post(f"/panel/dealers/{d1['id']}/prices", data={"csrf": t, f"sp_{p1}_0": ""})
+    assert not dealers.special_prices(d1["id"])
+    # Başka işletmenin bayisinin fiyat sayfası açılmaz
+    assert c.get("/panel/dealers/99999/prices").status_code == 404

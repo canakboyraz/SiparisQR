@@ -16,7 +16,7 @@
   <li class="{{ 'dl-off' if not d.active }}"><a href="{{ url_for('panel.dealer_form', dealer_id=d.id) }}">
     <div class="dl-info">
       <b>{{ d.name }}{% if not d.active %} · <span class="pill">Pasif</span>{% endif %}</b>
-      <small>Kod: {{ d.code }}{% if d.city %} · {{ d.city }}{% endif %}{% if d.discount|float > 0 %} · ek %{{ d.discount|replace('.', ',') }}{% endif %}{% if d.store_business_id %} · kendi mağazası var{% endif %}</small>
+      <small>Kod: {{ d.code }}{% if d.city %} · {{ d.city }}{% endif %}{% if d.discount|float > 0 %} · ek %{{ d.discount|replace('.', ',') }}{% endif %}{% if d.store_business_id %} · kendi mağazası var{% endif %}{% if special_counts.get(d.id) %} · {{ special_counts[d.id] }} özel fiyat{% endif %}</small>
       {% if s and s.pending %}<small><span class="pill is-pending">{{ s.pending }} onay bekliyor</span></small>{% endif %}
     </div>
     <div class="dl-money">

@@ -89,14 +89,68 @@ def pct_text(d):
     return t.rstrip("0").rstrip(".") if "." in t else t
 
 
-def price_for(item, dealer):
-    """item: ürün ya da seçenek satırı. Bayi fiyatı (boşsa normal fiyat) − bayiye özel % indirim."""
+def special_prices(dealer_id):
+    """Bu bayiye özel fiyatlar: {(product_id, variant_id|None): Decimal}"""
+    return {(r["product_id"], r["variant_id"]): core.money(r["price"])
+            for r in db.query("SELECT * FROM dealer_prices WHERE dealer_id = ?", (dealer_id,))}
+
+
+def _key(item):
+    # Seçenek satırında product_id vardır; ürün satırında yoktur.
+    return (item["product_id"], item["id"]) if "product_id" in item else (item["id"], None)
+
+
+def general_price(item, dealer):
+    """Özel fiyat yokken: genel bayi fiyatı (boşsa normal fiyat) − bayiye özel % indirim."""
     raw = item.get("dealer_price")
     base = core.money(raw) if raw not in (None, "") and core.money(raw) > 0 else core.money(item["price"])
     pct = discount_pct(dealer)
     if pct:
         base = (base * (Decimal("100") - pct) / Decimal("100")).quantize(Decimal("0.01"), ROUND_HALF_UP)
     return base
+
+
+def price_for(item, dealer):
+    """item: ürün ya da seçenek satırı. Öncelik: bu bayiye özel fiyat (aynen) >
+    genel bayi fiyatı (boşsa normal fiyat) − bayiye özel % indirim."""
+    if "_special" not in dealer:
+        dealer["_special"] = special_prices(dealer["id"])
+    sp = dealer["_special"].get(_key(item))
+    return sp if sp is not None else general_price(item, dealer)
+
+
+def save_special_prices(biz_id, dealer, entries):
+    """entries: {(product_id, variant_id|None): ham metin}. Boş = özel fiyat yok. Hatalı girişlerde ValueError."""
+    valid = set()
+    for p in db.query("SELECT id FROM products WHERE business_id = ?", (biz_id,)):
+        valid.add((p["id"], None))
+    for v in db.query("SELECT id, product_id FROM product_variants WHERE business_id = ?", (biz_id,)):
+        valid.add((v["product_id"], v["id"]))
+    rows = []
+    for key, raw in entries.items():
+        if key not in valid:
+            continue
+        val = parse_dealer_price(raw, "")
+        if val is not None:
+            rows.append((key, val))
+    db.execute("DELETE FROM dealer_prices WHERE dealer_id = ? AND business_id = ?", (dealer["id"], biz_id))
+    for (pid, vid), val in rows:
+        db.insert("dealer_prices", {"business_id": biz_id, "dealer_id": dealer["id"], "product_id": pid,
+                                    "variant_id": vid, "price": val})
+    db.commit()
+    dealer.pop("_special", None)
+    return len(rows)
+
+
+def copy_special_prices(biz_id, src_dealer_id, dst_dealer_id):
+    db.execute("DELETE FROM dealer_prices WHERE dealer_id = ? AND business_id = ?", (dst_dealer_id, biz_id))
+    n = 0
+    for r in db.query("SELECT * FROM dealer_prices WHERE dealer_id = ? AND business_id = ?", (src_dealer_id, biz_id)):
+        db.insert("dealer_prices", {"business_id": biz_id, "dealer_id": dst_dealer_id, "product_id": r["product_id"],
+                                    "variant_id": r["variant_id"], "price": r["price"]})
+        n += 1
+    db.commit()
+    return n
 
 
 def parse_dealer_price(raw, label=""):

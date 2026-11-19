@@ -59,6 +59,10 @@
   <button class="btn-primary btn-big" type="submit">{{ 'Kaydet' if d else 'Bayiyi ekle' }}</button>
 </form>
 
+{% if d %}
+<a class="card set-link" href="{{ url_for('panel.dealer_prices', dealer_id=d.id) }}"><b>💰 Bu bayiye özel fiyatlar{% if n_special %} · {{ n_special }} ürün{% endif %}</b><span>Ürün ürün bu bayiye farklı fiyat ver; boş bıraktıklarında genel bayi fiyatı geçerli →</span></a>
+{% endif %}
+
 {% if store %}
 <form method="post" action="{{ url_for('panel.dealer_sync', dealer_id=d.id) }}" class="card">
   <input type="hidden" name="csrf" value="{{ csrf_token() }}">

@@ -1220,7 +1220,10 @@ def _dealer_login_url():
 def dealers_page():
     _owner_only()
     rows = db.query("SELECT * FROM dealers WHERE business_id = ? ORDER BY active DESC, name", (g.biz["id"],))
+    special_counts = {r["dealer_id"]: int(r["n"]) for r in db.query(
+        "SELECT dealer_id, COUNT(*) AS n FROM dealer_prices WHERE business_id = ? GROUP BY dealer_id", (g.biz["id"],))}
     return render_template("panel/dealers.html", active="dealers", rows=rows, stats=dealers.stats(g.biz["id"]),
+                           special_counts=special_counts,
                            login_url=_dealer_login_url())
 
 
@@ -1276,7 +1279,8 @@ def dealer_form(dealer_id=None):
         st = dealers.stats(g.biz["id"]).get(d["id"])
     return render_template("panel/dealer_form.html", active="dealers", d=d, form=form, store=store, PERMS=dealers.PERMS,
                            share=share, recent=recent, st=st, login_url=_dealer_login_url(),
-                           store_url=public_store_url(store) if store else None)
+                           store_url=public_store_url(store) if store else None,
+                           n_special=len(dealers.special_prices(d["id"])) if d else 0)
 
 
 @bp.post("/dealers/<int:dealer_id>/sync")
@@ -1289,3 +1293,58 @@ def dealer_sync(dealer_id):
     n = dealers.sync_catalog(g.biz["id"], d["store_business_id"])
     flash(f"{n} yeni ürün bayinin mağazasına eklendi." if n else "Bayinin mağazasında eksik ürün yok.", "ok")
     return redirect(url_for("panel.dealer_form", dealer_id=d["id"]))
+
+
+@bp.route("/dealers/<int:dealer_id>/prices", methods=["GET", "POST"])
+@login_required
+def dealer_prices(dealer_id):
+    """Bu bayiye özel fiyat listesi. Boş = genel bayi fiyatı (− bayi indirimi) geçerli."""
+    _owner_only()
+    d = dealers.get(g.biz["id"], dealer_id)
+    if not d:
+        abort(404)
+    bid = g.biz["id"]
+    if request.method == "POST":
+        src = request.form.get("copy_from", type=int)
+        if src:
+            other = dealers.get(bid, src)
+            if not other or other["id"] == d["id"]:
+                abort(400)
+            n = dealers.copy_special_prices(bid, other["id"], d["id"])
+            flash(f"{other['name']} bayisinin {n} özel fiyatı {d['name']} için kopyalandı. İstediğini değiştirip kaydedebilirsin.", "ok")
+            return redirect(url_for("panel.dealer_prices", dealer_id=d["id"]))
+        entries = {}
+        for k, v in request.form.items():
+            if k.startswith("sp_"):
+                parts = k[3:].split("_")
+                if len(parts) == 2 and parts[0].isdigit() and (parts[1].isdigit() or parts[1] == "0"):
+                    entries[(int(parts[0]), int(parts[1]) or None)] = v
+        try:
+            n = dealers.save_special_prices(bid, d, entries)
+        except ValueError as e:
+            db.rollback()
+            flash(f"Kaydedilemedi: {e}", "error")
+            return redirect(url_for("panel.dealer_prices", dealer_id=d["id"]))
+        flash(f"{d['name']} için {n} ürüne özel fiyat kaydedildi. Diğerlerinde genel bayi fiyatı geçerli." if n
+              else f"{d['name']} için özel fiyat yok; tüm ürünlerde genel bayi fiyatı geçerli.", "ok")
+        return redirect(url_for("panel.dealer_prices", dealer_id=d["id"]))
+    special = dealers.special_prices(d["id"])
+    groups = core.catalog(bid, only_visible=False)
+    vmap = core.variants_by_product([p["id"] for _, items in groups for p in items])
+    rows = []
+    for cat, items in groups:
+        out = []
+        for p in items:
+            vs = vmap.get(p["id"], [])
+            lines = []
+            for it, vid, label in ([(v, v["id"], v["name"]) for v in vs] or [(p, 0, p["unit"] or "")]):
+                key = (p["id"], vid or None)
+                lines.append({"field": f"sp_{p['id']}_{vid}", "label": label, "normal": core.money(it["price"]),
+                              "general": dealers.general_price(it, d), "special": special.get(key)})
+            out.append({"p": p, "lines": lines})
+        rows.append(((cat or {}).get("name") or "Diğer", out))
+    others = [o for o in db.query("SELECT d.id, d.name, COUNT(x.id) AS n FROM dealers d "
+                                  "JOIN dealer_prices x ON x.dealer_id = d.id WHERE d.business_id = ? AND d.id <> ? "
+                                  "GROUP BY d.id, d.name ORDER BY d.name", (bid, d["id"]))]
+    return render_template("panel/dealer_prices.html", active="dealers", d=d, rows=rows, others=others,
+                           n_special=len(special), pct=dealers.pct_text(dealers.discount_pct(d)))

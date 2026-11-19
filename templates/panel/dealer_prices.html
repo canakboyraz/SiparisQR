@@ -1,0 +1,33 @@
+{% extends "panel/layout.html" %}
+{% block ptitle %}{{ d.name }} · Özel fiyatlar{% endblock %}
+{% block content %}
+<a class="pn-back" href="{{ url_for('panel.dealer_form', dealer_id=d.id) }}">← {{ d.name }}</a>
+<div class="pn-head"><h1>{{ d.name }} · fiyat listesi</h1></div>
+<p class="muted">Bu bayiye özel fiyatı yaz; bayi o ürünü <b>tam bu fiyattan</b> görür. Boş bıraktığın üründe genel bayi fiyatı geçerli{% if pct and pct != '0' %} (ek %{{ pct|replace('.', ',') }} indirimiyle){% endif %}. Diğer bayilerin fiyatı değişmez.</p>
+
+{% if others %}
+<form method="post" class="card dp-copy">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <label class="fld"><span>Başka bir bayinin fiyat listesini kopyala</span>
+    <select name="copy_from" required><option value="">Bayi seç</option>{% for o in others %}<option value="{{ o.id }}">{{ o.name }} ({{ o.n }} özel fiyat)</option>{% endfor %}</select></label>
+  <button class="btn-sm" type="submit" onclick="return confirm('{{ d.name }} için girilmiş özel fiyatlar silinip seçilen bayininkiler kopyalansın mı?')">Kopyala</button>
+</form>
+{% endif %}
+
+<form method="post" class="card dp">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <div class="dp-head"><span>Ürün</span><span>Genel bayi</span><span>Bu bayiye</span></div>
+  {% for cat, items in rows %}
+  <h3 class="dp-cat">{{ cat }}</h3>
+  {% for r in items %}{% for ln in r.lines %}
+  <div class="dp-row {{ 'has-sp' if ln.special is not none }}">
+    <div class="dp-name"><b>{{ r.p.name }}{% if ln.label %} <em>· {{ ln.label }}</em>{% endif %}</b><small>Perakende {{ tl(ln.normal) }}</small></div>
+    <div class="dp-gen">{{ tl(ln.general) }}</div>
+    <input name="{{ ln.field }}" inputmode="decimal" value="{{ (ln.special|string)|replace('.', ',')|replace(',00', '') if ln.special is not none else '' }}" placeholder="{{ (ln.general|string)|replace('.', ',')|replace(',00', '') }}" aria-label="{{ r.p.name }} {{ ln.label }} bu bayiye fiyat">
+  </div>
+  {% endfor %}{% endfor %}
+  {% endfor %}
+  <button class="btn-primary btn-big" type="submit">Fiyatları kaydet</button>
+  <p class="muted"><small>Bir özel fiyatı kaldırmak için kutuyu boşalt ve kaydet.</small></p>
+</form>
+{% endblock %}
