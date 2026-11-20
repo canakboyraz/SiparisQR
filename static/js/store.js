@@ -5,7 +5,7 @@
   var C = JSON.parse(root.getAttribute("data-config"));
   var P = window.PRODUCTS || {};
   var $ = function (id) { return document.getElementById(id); };
-  var detailId = null, detailVar = null, detailQty = 1;
+  var detailId = null, detailVar = null, detailQty = 1, editKey = null;
 
   // ── Sepet: anahtar "ürün" ya da "ürün:seçenek" ────────────────────────────
   function parse(key) { var a = String(key).split(":"); return { p: P[a[0]], v: a[1] ? findVar(P[a[0]], a[1]) : null, pid: a[0], vid: a[1] || null }; }
@@ -106,9 +106,14 @@
     list.innerHTML = "";
     Object.keys(cart).forEach(function (k) {
       var it = parse(k), li = document.createElement("li");
-      li.innerHTML = '<div class="st-ln"><b></b><small></small></div>' +
-        '<div class="st-qty"><button type="button" data-act="dec" aria-label="Azalt">−</button><b></b>' +
+      li.innerHTML = '<div class="st-ln"><b></b><small></small>' +
+        '<span class="st-lnact"><button type="button" class="st-lnbtn" data-edit>Düzenle</button>' +
+        '<button type="button" class="st-lnbtn is-del" data-del>Sil</button></span></div>' +
+        '<div class="st-qty"><button type="button" data-act="dec"></button><b></b>' +
         '<button type="button" data-act="inc" aria-label="Artır">+</button></div><span class="st-lt"></span>';
+      var dec = li.querySelector('[data-act="dec"]');
+      dec.textContent = cart[k] > 1 ? "−" : "🗑";
+      dec.setAttribute("aria-label", cart[k] > 1 ? "Azalt" : "Sepetten çıkar");
       li.querySelector(".st-ln b").textContent = it.p.name;
       var unit = it.v ? it.v.name : it.p.unit;
       li.querySelector(".st-ln small").textContent = (unit ? unit + " · " : "") + tl(priceOf(k));
@@ -167,6 +172,25 @@
       if (act === "add" && navigator.vibrate) navigator.vibrate(8);
       return;
     }
+    var del = e.target.closest("[data-del]");
+    if (del) {
+      var li = del.closest("li[data-key]");
+      if (li) { setQty(li.getAttribute("data-key"), 0); if (navigator.vibrate) navigator.vibrate(8); }
+      return;
+    }
+    var ed = e.target.closest("[data-edit]");
+    if (ed) {
+      var li2 = ed.closest("li[data-key]");
+      if (!li2) return;
+      var key2 = li2.getAttribute("data-key"), parts = key2.split(":");
+      close($("st-cart"));
+      setTimeout(function () { showDetail(parts[0], parts[1] || null, key2); }, 230);
+      return;
+    }
+    if (e.target.closest("#st-clear")) {
+      if (confirm("Sepetteki tüm ürünler çıkarılsın mı?")) { cart = {}; save(); render(); }
+      return;
+    }
     var o = e.target.closest("[data-open]");
     if (o) showDetail(o.getAttribute("data-open"));
   });
@@ -187,12 +211,14 @@
     var okNow = p.ok && C.open && (!p.v.length || (v && v.ok));
     $("st-d-add").hidden = !okNow; $("st-d-qtybox").hidden = !okNow;
     $("st-d-out").hidden = p.ok && (!v || v.ok);
-    $("st-d-add").textContent = cart[detailKey()] ? "Sepeti güncelle" : "Sepete ekle";
+    $("st-d-add").textContent = (editKey || cart[detailKey()]) ? "Sepeti güncelle" : "Sepete ekle";
+    var rm = $("st-d-remove");
+    if (rm) rm.hidden = !editKey;
   }
-  function showDetail(id) {
+  function showDetail(id, wantVar, fromKey) {
     var p = P[id];
     if (!p) return;
-    detailId = id; detailVar = null;
+    detailId = id; detailVar = null; editKey = fromKey || null;
     var img = $("st-d-img");
     img.hidden = !p.img; if (p.img) img.src = p.img;
     $("st-d-name").textContent = p.name;
@@ -208,9 +234,19 @@
       inp.value = v.id; inp.disabled = !v.ok;
       l.querySelector("b").textContent = v.name;
       l.querySelector("small").textContent = v.ok ? tl(v.price) : "tükendi";
-      inp.addEventListener("change", function () { detailVar = String(v.id); detailQty = cart[detailKey()] || 1; paintDetail(); });
+      inp.addEventListener("change", function () {
+        detailVar = String(v.id);
+        if (!editKey) detailQty = cart[detailKey()] || 1;
+        paintDetail();
+      });
       fs.appendChild(l);
-      if (!detailVar && v.ok) { detailVar = String(v.id); inp.checked = true; }
+      if (wantVar && String(v.id) === String(wantVar)) { detailVar = String(v.id); inp.checked = true; }
+    });
+    if (!detailVar) p.v.forEach(function (v) {
+      if (!detailVar && v.ok) {
+        detailVar = String(v.id);
+        var r = fs.querySelector('input[value="' + v.id + '"]'); if (r) r.checked = true;
+      }
     });
     detailQty = cart[detailKey()] || 1;
     paintDetail();
@@ -218,7 +254,23 @@
   }
   $("st-d-dec").addEventListener("click", function () { detailQty = Math.max(1, detailQty - 1); paintDetail(); });
   $("st-d-inc").addEventListener("click", function () { detailQty = Math.min(leftOf(detailKey()), detailQty + 1); paintDetail(); });
-  $("st-d-add").addEventListener("click", function () { setQty(detailKey(), detailQty); close($("st-detail")); });
+  $("st-d-add").addEventListener("click", function () {
+    var back = !!editKey;
+    if (editKey && editKey !== detailKey()) {            // seçenek değiştirildi: eski satırı kaldır
+      var keepOld = editKey; delete cart[keepOld];
+      detailQty = detailQty + (cart[detailKey()] || 0);  // aynı seçenek zaten sepetteyse birleştir
+    }
+    editKey = null;
+    setQty(detailKey(), detailQty);
+    close($("st-detail"));
+    if (back && count()) setTimeout(function () { open($("st-cart")); }, 230);
+  });
+  if ($("st-d-remove")) $("st-d-remove").addEventListener("click", function () {
+    var k = editKey; editKey = null;
+    if (k) setQty(k, 0);
+    close($("st-detail"));
+    if (count()) setTimeout(function () { open($("st-cart")); }, 230);
+  });
 
   var bar = $("st-cartbar");
   if (bar) bar.addEventListener("click", function () { renderCart(); open($("st-cart")); });

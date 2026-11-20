@@ -233,6 +233,20 @@ def create_app(test_config=None):
     import qr as _qr
     from markupsafe import Markup
 
+    _asset_ver = {}
+
+    @app.template_global()
+    def asset(path):
+        """/static/... adresine içerik özeti ekler; dosya değişince tarayıcı yenisini indirir."""
+        if path not in _asset_ver:
+            import hashlib
+            try:
+                with open(os.path.join(app.static_folder, path), "rb") as fh:
+                    _asset_ver[path] = hashlib.sha1(fh.read()).hexdigest()[:10]
+            except OSError:
+                _asset_ver[path] = "0"
+        return f"/static/{path}?v={_asset_ver[path]}"
+
     @app.template_global()
     def qr_svg(text):
         return Markup(_qr.svg(text))

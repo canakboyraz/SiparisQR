@@ -129,6 +129,7 @@
         <div class="st-qty is-big" id="st-d-qtybox"><button type="button" id="st-d-dec" aria-label="Azalt">−</button><b id="st-d-qty">1</b><button type="button" id="st-d-inc" aria-label="Artır">+</button></div>
       </div>
       <button class="btn-primary" type="button" id="st-d-add">Sepete ekle</button>
+      <button class="btn-link st-d-remove" type="button" id="st-d-remove" hidden>Sepetten çıkar</button>
       <p class="st-d-out" id="st-d-out" hidden>Bu ürün şu an tükendi.</p>
     </div>
   </div>
@@ -138,7 +139,7 @@
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="st-cart-title">
     <button class="sheet-x" type="button" data-close aria-label="Kapat">×</button>
     <form id="st-form" novalidate>
-      <h2 id="st-cart-title">Sepetin</h2>
+      <div class="st-cart-head"><h2 id="st-cart-title">Sepetin</h2><button type="button" class="st-lnbtn is-del" id="st-clear">Sepeti boşalt</button></div>
       <ul class="st-lines" id="st-lines"></ul>
 
       {% if biz.delivery and biz.pickup %}
@@ -214,4 +215,4 @@
 </div>
 <script>window.PRODUCTS = {{ products|tojson }};</script>
 {% endblock %}
-{% block scripts %}<script src="/static/js/store.js?v=1" defer></script>{% endblock %}
+{% block scripts %}<script src="{{ asset('js/store.js') }}" defer></script>{% endblock %}

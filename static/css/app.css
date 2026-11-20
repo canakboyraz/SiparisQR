@@ -596,3 +596,12 @@ em.is-bad{font-style:normal;color:var(--bad);font-weight:700}
 .dp-gen{text-align:right;color:var(--ink-2);font-size:14px}
 .dp-row input{width:100%;min-height:42px;text-align:right;font-size:16px;border:1px solid #DDD;border-radius:10px;padding:0 10px;background:#fff}
 .dp-row.has-sp input{border-color:var(--accent);background:var(--tint);font-weight:700}
+/* Sepet: düzenle / sil / boşalt */
+.st-cart-head{display:flex;align-items:center;gap:12px;padding-right:48px}
+.st-cart-head h2{margin-right:auto}
+.st-lnact{display:flex;gap:4px;margin-top:4px}
+.st-lnbtn{border:0;background:none;padding:6px 8px;margin-left:-8px;min-height:32px;font:inherit;font-size:13.5px;font-weight:650;color:var(--accent);cursor:pointer;border-radius:8px}
+.st-lnbtn+.st-lnbtn{margin-left:0}
+.st-lnbtn.is-del{color:var(--bad)}
+.st-lnbtn:active{background:var(--tint)}
+.st-d-remove{display:block;width:100%;margin-top:6px;color:var(--bad);min-height:44px}

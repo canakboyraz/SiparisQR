@@ -107,4 +107,4 @@
 </main>
 <script>window.ORDER = {{ data|tojson }};</script>
 {% endblock %}
-{% block scripts %}<script src="/static/js/status.js?v=1" defer></script>{% endblock %}
+{% block scripts %}<script src="{{ asset('js/status.js') }}" defer></script>{% endblock %}
