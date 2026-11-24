@@ -839,7 +839,8 @@ def settings():
                 flash(str(e), "error")
     from app import public_base
     return render_template("panel/settings.html", active="settings", b=b, zones=core.zones(g.biz["id"]),
-                           callback_url=public_base() + "/paytr/callback", card_enabled=core.card_payments_enabled())
+                           callback_url=public_base() + "/paytr/callback", card_enabled=core.card_payments_enabled(),
+                           store_url=public_store_url(g.biz))
 
 
 # ── QR ──────────────────────────────────────────────────────────────────────

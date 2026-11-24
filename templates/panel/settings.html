@@ -2,9 +2,21 @@
 {% block ptitle %}Ayarlar{% endblock %}
 {% block content %}
 <h1>Ayarlar</h1>
-{% if g.perms is none and not biz.parent_id %}
-<a class="card set-link" href="{{ url_for('panel.dealers') }}"><b>🏪 Bayiler</b><span>Bayi ekle, kullanıcı kodu ve şifre ver, bayi fiyatları ve yetkiler →</span></a>
-{% endif %}
+<section class="card sc-card">
+  <h2>Mağaza linkin</h2>
+  <div class="sc-link"><a href="{{ store_url }}" target="_blank" rel="noopener">{{ store_url|replace('https://', '') }}</a>
+    <button type="button" class="btn-sm" data-share="{{ store_url }}" data-title="{{ biz.name }}">Paylaş / kopyala</button></div>
+  <div class="sc-grid">
+    {% if can('qr') %}
+    <a href="{{ url_for('panel.qr') }}"><span>🔳</span><b>QR kod</b><small>İndir, yazdır</small></a>
+    <a href="{{ url_for('panel.flyer') }}"><span>📄</span><b>Broşür</b><small>Kapılara dağıt</small></a>
+    {% endif %}
+    {% if can('reports') %}<a href="{{ url_for('panel.reports') }}"><span>📊</span><b>Rapor</b><small>Ciro, stok</small></a>{% endif %}
+    {% if g.perms is none and not biz.parent_id %}<a href="{{ url_for('panel.dealers') }}"><span>🏪</span><b>Bayiler</b><small>Kod, şifre, fiyat</small></a>{% endif %}
+    <a href="{{ url_for('panel.notifications') }}"><span>🔔</span><b>Bildirimler</b><small>Telefona uyarı</small></a>
+    <a href="{{ url_for('panel.orders_cleanup') }}"><span>🗑</span><b>Sipariş sil</b><small>Denemeleri temizle</small></a>
+  </div>
+</section>
 <form method="post" enctype="multipart/form-data" class="form">
   <input type="hidden" name="csrf" value="{{ csrf_token() }}">
   <section class="card">

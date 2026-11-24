@@ -195,3 +195,14 @@
     schedule();
   }
 })();
+
+// Mağaza linkini paylaş / kopyala (Ayarlar)
+document.addEventListener("click", function (e) {
+  var b = e.target.closest("[data-share]");
+  if (!b) return;
+  var url = b.getAttribute("data-share"), title = b.getAttribute("data-title") || "";
+  var done = function () { var t = b.textContent; b.textContent = "Kopyalandı ✓"; setTimeout(function () { b.textContent = t; }, 1600); };
+  if (navigator.share) { navigator.share({ title: title, url: url }).catch(function () {}); return; }
+  if (navigator.clipboard) { navigator.clipboard.writeText(url).then(done, function () { prompt("Linki kopyala:", url); }); return; }
+  prompt("Linki kopyala:", url);
+});
