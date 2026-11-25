@@ -1,0 +1,23 @@
+{% extends "panel/layout.html" %}
+{% block ptitle %}Excel'den ürün yükle{% endblock %}
+{% block content %}
+<a class="pn-back" href="{{ url_for('panel.products') }}">← Ürünler</a>
+<h1>Excel'den ürün yükle</h1>
+<form method="post" enctype="multipart/form-data" class="card form">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <p>Satış programından ya da Excel'den aldığın ürün listesini yükle. Bir sonraki adımda hangi sütunun ne olduğunu kontrol edeceksin; hiçbir şey hemen kaydedilmez.</p>
+  <label class="fld"><span>Dosya (.xlsx ya da .csv)</span><input type="file" name="file" accept=".xlsx,.csv,.txt,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" required></label>
+  <button class="btn-primary btn-big" type="submit">Yükle ve kontrol et</button>
+</form>
+<section class="card">
+  <h2>Dosya nasıl olmalı?</h2>
+  <ul class="tips">
+    <li>Her satırda bir ürün. En azından <b>ürün adı</b> ve <b>satış fiyatı</b> sütunu olsun.</li>
+    <li><b>Barkod</b> sütunu varsa çok iyi: aynı dosyayı sonra tekrar yüklediğinde fiyatlar barkoddan eşleşip güncellenir.</li>
+    <li>Kategori / grup, birim (gramaj) ve stok sütunları isteğe bağlı.</li>
+    <li>Eski .xls dosyası ise Excel'de <b>Farklı kaydet → Excel Çalışma Kitabı (.xlsx)</b> seç.</li>
+    <li>Tek seferde 5.000 ürüne kadar.</li>
+  </ul>
+  <p class="muted"><small>Örnek başlıklar: <code>Barkod · Ürün Adı · Satış Fiyatı · Grup · Birim · Stok</code></small></p>
+</section>
+{% endblock %}

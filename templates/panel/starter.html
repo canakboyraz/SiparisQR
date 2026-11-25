@@ -1,0 +1,23 @@
+{% extends "panel/layout.html" %}
+{% block ptitle %}Hazır ürün listesi{% endblock %}
+{% block content %}
+<a class="pn-back" href="{{ url_for('panel.products') }}">← Ürünler</a>
+<h1>Hazır liste · {{ info.title }}</h1>
+<p class="muted">{{ info.desc }}. Sattığın ürünlerin <b>fiyatını yaz</b>, fiyatı boş olanlar eklenmez. Adı kendi markana göre değiştirebilirsin (ör. "Süt" → "Pınar Süt").</p>
+<form method="post" class="form">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  {% for cat, rows in pack %}
+  <section class="card st-pack">
+    <h2>{{ cat }}</h2>
+    {% for n, name, unit in rows %}{% set ex = have.get((name|lower, unit|lower)) %}
+    <div class="sp-row {{ 'is-have' if ex }}">
+      <input name="n{{ n }}" value="{{ name }}" maxlength="100" aria-label="Ürün adı">
+      <span class="sp-unit">{{ unit }}</span>
+      <input name="p{{ n }}" inputmode="decimal" placeholder="{{ 'var' if ex else 'fiyat' }}" aria-label="{{ name }} {{ unit }} fiyatı">
+    </div>
+    {% endfor %}
+  </section>
+  {% endfor %}
+  <div class="sticky-save"><button class="btn-primary btn-big" type="submit">Fiyatı yazılanları ekle</button></div>
+</form>
+{% endblock %}

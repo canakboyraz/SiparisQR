@@ -30,7 +30,9 @@ def code_key(code):
 PERMS = {
     "products": ("Ürün ekleme / düzenleme", "Ürün, fiyat, fotoğraf, kategori ve stok", (
         "panel.products", "panel.product_form", "panel.product_stock", "panel.product_toggle",
-        "panel.product_delete", "panel.product_move", "panel.categories", "panel.stock_quick")),
+        "panel.product_delete", "panel.product_move", "panel.categories", "panel.stock_quick", "panel.products_import",
+        "panel.products_import_map", "panel.products_starter", "panel.products_quick", "panel.products_lookup",
+        "panel.products_scan")),
     "campaign": ("Kampanya ve duyuru", "Damga kartı, ilk sipariş indirimi, davet, WhatsApp duyurusu", (
         "panel.campaign", "panel.broadcast")),
     "customers": ("Müşteriler", "Müşteri listesi ve sadakat kartları", ("panel.customers",)),

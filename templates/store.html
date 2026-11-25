@@ -62,13 +62,18 @@
   {% if groups|length > 1 %}
   <nav class="st-cats" aria-label="Kategoriler">{% for cat, items in groups %}<a href="#k{{ cat.id }}">{{ cat.name }}</a>{% endfor %}</nav>
   {% endif %}
+  {% set n_items = groups|sum(attribute='1', start=[])|length %}
+  {% if n_items > 15 %}
+  <div class="st-searchwrap"><input class="st-search" id="st-search" type="search" placeholder="Ürün ara ({{ n_items }} ürün)" aria-label="Ürün ara" autocomplete="off"></div>
+  <p class="st-noresult" id="st-noresult" hidden>Aradığın ürünü bulamadık. Sipariş notuna yazarsan getirmeye çalışırız.</p>
+  {% endif %}
   <main class="st-list">
     {% for cat, items in groups %}
     <section class="st-cat" id="k{{ cat.id }}">
       {% if groups|length > 1 %}<h2>{{ cat.name }}</h2>{% endif %}
       <div class="st-grid">
       {% for p in items %}
-      <article class="st-item {{ 'is-out' if not p.available }}" data-id="{{ p.id }}">
+      <article class="st-item {{ 'is-out' if not p.available }} {{ 'no-img' if not p.image_id }}" data-id="{{ p.id }}" data-q="{{ (p.name ~ ' ' ~ (p.unit or ''))|lower }}">
         <button type="button" class="st-item-open" data-open="{{ p.id }}" aria-label="{{ p.name }} detayları">
           {% if p.image_id %}<img src="/img/{{ p.image_id }}" alt="" loading="lazy" decoding="async">
           {% else %}<span class="st-noimg" aria-hidden="true">{{ p.name[:1]|upper }}</span>{% endif %}

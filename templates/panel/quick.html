@@ -1,0 +1,61 @@
+{% extends "panel/layout.html" %}
+{% block ptitle %}Hızlı ürün ekle{% endblock %}
+{% block content %}
+<a class="pn-back" href="{{ url_for('panel.products') }}">← Ürünler</a>
+<h1>Hızlı ürün ekle</h1>
+<p class="muted">Alt alta yaz: ad ve fiyat yeter. Barkod okuyucun varsa barkod kutusuna okut; ürün ortak katalogda varsa adı kendiliğinden dolar. Fotoğrafı sonra eklersin.</p>
+<datalist id="qk-cats">{% for c in cats %}<option value="{{ c.name }}">{% endfor %}</datalist>
+<form method="post" class="card form qk" id="qk-form">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <div id="qk-rows">
+    {% set list = rows if rows else [{}] * 8 %}
+    {% for r in list %}
+    <div class="qk-row">
+      <input name="barcode" inputmode="numeric" placeholder="Barkod" value="{{ r.barcode or '' }}" class="qk-bc" autocomplete="off">
+      <input name="name" placeholder="Ürün adı" value="{{ r.name or '' }}" maxlength="100" class="qk-name">
+      <input name="price" inputmode="decimal" placeholder="Fiyat" value="{{ r.price or '' }}" class="qk-price">
+      <input name="unit" placeholder="Birim" value="{{ r.unit or '' }}" maxlength="40" class="qk-unit">
+      <input name="category" placeholder="Kategori" value="{{ r.category or '' }}" list="qk-cats" maxlength="60" class="qk-cat">
+      <input name="stock" inputmode="numeric" placeholder="Stok" value="{{ r.stock or '' }}" class="qk-stock">
+    </div>
+    {% endfor %}
+  </div>
+  <button class="btn-sm" type="button" id="qk-add">+ 5 satır daha</button>
+  <div class="qk-actions">
+    <button class="btn-primary btn-big" type="submit">Kaydet</button>
+    <button class="btn-big" type="submit" name="more" value="1">Kaydet ve devam et</button>
+  </div>
+</form>
+<script>
+(function () {
+  var rows = document.getElementById("qk-rows");
+  document.getElementById("qk-add").addEventListener("click", function () {
+    var tpl = rows.querySelector(".qk-row");
+    for (var i = 0; i < 5; i++) {
+      var c = tpl.cloneNode(true);
+      c.querySelectorAll("input").forEach(function (x) { x.value = ""; });
+      rows.appendChild(c);
+    }
+  });
+  function lookup(inp) {
+    var row = inp.closest(".qk-row"), bc = inp.value.replace(/\D/g, "");
+    if (bc.length < 8) return;
+    fetch("{{ url_for('panel.products_lookup') }}?barcode=" + bc, { credentials: "same-origin" })
+      .then(function (r) { return r.json(); }).then(function (d) {
+        var s = d.existing || d.suggest; if (!s) { row.querySelector(".qk-name").focus(); return; }
+        var n = row.querySelector(".qk-name"), u = row.querySelector(".qk-unit"), p = row.querySelector(".qk-price");
+        if (!n.value) n.value = s.name || "";
+        if (!u.value) u.value = s.unit || "";
+        if (d.existing && !p.value) p.value = (d.existing.price || "").replace(".", ",");
+        if (d.existing) row.classList.add("is-have");
+        p.focus();
+      }).catch(function () {});
+  }
+  rows.addEventListener("change", function (e) { if (e.target.classList.contains("qk-bc")) lookup(e.target); });
+  // USB barkod okuyucu Enter'a basar: formu göndermesin, aramayı yapsın
+  rows.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && e.target.classList.contains("qk-bc")) { e.preventDefault(); lookup(e.target); }
+  });
+})();
+</script>
+{% endblock %}

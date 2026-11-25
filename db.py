@@ -233,6 +233,25 @@ CREATE TABLE IF NOT EXISTS dealers (
   created_at TEXT NOT NULL,
   UNIQUE (business_id, code)
 );
+CREATE TABLE IF NOT EXISTS catalog_items (
+  id {pk},
+  barcode TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  unit TEXT NOT NULL DEFAULT '',
+  category TEXT NOT NULL DEFAULT '',
+  brand TEXT NOT NULL DEFAULT '',
+  image_id INTEGER,
+  source TEXT NOT NULL DEFAULT 'shop',
+  uses INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS import_jobs (
+  id {pk},
+  business_id INTEGER NOT NULL,
+  filename TEXT NOT NULL DEFAULT '',
+  data TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS dealer_prices (
   id {pk},
   business_id INTEGER NOT NULL,
@@ -312,6 +331,8 @@ MIGRATIONS = [
     ("users", "dealer_id", "INTEGER"),
     ("businesses", "parent_id", "INTEGER"),
     ("businesses", "dealer_id", "INTEGER"),
+    # 6. aşama: market / toplu ürün
+    ("products", "barcode", "TEXT"),
 ]
 
 
@@ -444,6 +465,13 @@ def init():
                 cur.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl_col}")
                 c.commit()
             except Exception:      # sütun zaten var
+                c.rollback()
+                cur = c.cursor()
+        for stmt in ("CREATE INDEX IF NOT EXISTS ix_products_barcode ON products (business_id, barcode)",):
+            try:
+                cur.execute(stmt)
+                c.commit()
+            except Exception:
                 c.rollback()
                 cur = c.cursor()
         _initialized.add(key)

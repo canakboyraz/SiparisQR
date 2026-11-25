@@ -1,0 +1,20 @@
+{% extends "panel/layout.html" %}
+{% block ptitle %}Yükleme tamamlandı{% endblock %}
+{% block content %}
+<h1>Yükleme tamamlandı</h1>
+<section class="kpi">
+  <div class="card"><span>Eklenen</span><b>{{ res.added }}</b><small>yeni ürün</small></div>
+  <div class="card"><span>Güncellenen</span><b>{{ res.updated }}</b><small>fiyatı değişti</small></div>
+  <div class="card"><span>Aynı</span><b>{{ res.same }}</b><small>değişiklik yok</small></div>
+  <div class="card"><span>Atlanan</span><b>{{ res.skipped|length }}</b><small>satır</small></div>
+</section>
+{% if res.skipped %}
+<section class="card">
+  <h2>Atlanan satırlar</h2>
+  <ul class="tips">{% for n, why in res.skipped[:50] %}<li>{{ n }}. satır: {{ why }}</li>{% endfor %}</ul>
+  {% if res.skipped|length > 50 %}<p class="muted">… ve {{ res.skipped|length - 50 }} satır daha.</p>{% endif %}
+</section>
+{% endif %}
+<p class="muted">Fotoğrafı olmayan ürünler mağazada baş harfiyle görünür; istediğin ürüne dokunup fotoğraf ekleyebilirsin. Barkodu ortak katalogda fotoğrafı olan ürünlere fotoğraf otomatik geldi.</p>
+<a class="btn-primary btn-big" href="{{ url_for('panel.products') }}">Ürünlere git</a>
+{% endblock %}

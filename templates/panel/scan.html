@@ -1,0 +1,42 @@
+{% extends "panel/layout.html" %}
+{% block ptitle %}Barkodla ekle{% endblock %}
+{% block content %}
+<a class="pn-back" href="{{ url_for('panel.products') }}">← Ürünler</a>
+<h1>Barkodla ekle / fiyat güncelle</h1>
+<p class="muted">Ürünün barkodunu okut. Mağazanda varsa fiyatını güncellersin; yoksa adı ortak katalogdan gelir, fiyatı yazıp eklersin. {{ n_barcoded }} ürününde barkod kayıtlı.</p>
+<div id="sc" data-lookup="{{ url_for('panel.products_lookup') }}" data-save="{{ url_for('panel.products_scan') }}" data-csrf="{{ csrf_token() }}">
+  <section class="card sc-cam">
+    <div class="sc-view" id="sc-view" hidden>
+      <video id="sc-video" playsinline muted></video>
+      <div class="sc-aim"></div>
+    </div>
+    <button class="btn-primary btn-big" type="button" id="sc-start">📷 Kamerayı aç</button>
+    <p class="sc-hint" id="sc-hint" hidden>Barkodu çizginin üstüne getir, telefonu biraz uzak tut.</p>
+    <form class="sc-manual" id="sc-manual" autocomplete="off">
+      <input id="sc-code" inputmode="numeric" placeholder="ya da barkodu yaz / USB okuyucuyla okut" aria-label="Barkod">
+      <button class="btn-sm" type="submit">Bul</button>
+    </form>
+  </section>
+
+  <section class="card sc-form" id="sc-form" hidden>
+    <div class="sc-found" id="sc-found"></div>
+    <label class="fld"><span>Ürün adı</span><input id="sc-name" maxlength="100"></label>
+    <div class="row3">
+      <label class="fld"><span>Fiyat (TL)</span><input id="sc-price" inputmode="decimal" placeholder="ör. 24,50"></label>
+      <label class="fld"><span>Birim</span><input id="sc-unit" maxlength="40" placeholder="ör. 500 g"></label>
+      <label class="fld"><span>Stok <small>(boş = değişmez)</small></span><input id="sc-stock" inputmode="numeric"></label>
+    </div>
+    <label class="fld" id="sc-catwrap"><span>Kategori</span>
+      <select id="sc-cat"><option value="">Kategorisiz</option>{% for c in cats %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></label>
+    <p class="sc-err" id="sc-err" hidden></p>
+    <button class="btn-primary btn-big" type="button" id="sc-save">Kaydet ve sonrakine geç</button>
+    <button class="btn-link" type="button" id="sc-skip">Vazgeç</button>
+  </section>
+
+  <section class="card" id="sc-log-card" hidden>
+    <h2>Bu oturumda</h2>
+    <ul class="sc-log" id="sc-log"></ul>
+  </section>
+</div>
+<script src="{{ asset('js/scan.js') }}" defer></script>
+{% endblock %}

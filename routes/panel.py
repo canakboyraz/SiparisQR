@@ -5,12 +5,13 @@ import json
 from flask import Blueprint, Response, abort, flash, g, jsonify, redirect, render_template, request, url_for
 from PIL import Image, ImageOps
 
+import bulk
 import core
 import db
 import dealers
 import webpush
 from app import (current_user, login_required, notify_owner, platform_name, public_order_url, public_store_url,
-                 push_subject)
+                 push_subject, rate_limited)
 
 bp = Blueprint("panel", __name__, url_prefix="/panel")
 
@@ -481,6 +482,13 @@ def product_form(product_id=None):
                       "category_id": _category_id(f), "available": 1 if f.get("available") else 0,
                       "visible": 1 if f.get("visible") else 0,
                       "dealer_price": None if new_variants else dealers.parse_dealer_price(f.get("dealer_price"))}
+            bc = bulk._clean_barcode(f.get("barcode"))
+            if (f.get("barcode") or "").strip() and not bc:
+                raise ValueError("Barkod 6-14 haneli rakamlardan oluşmalı (ör. 8690504012345). Boş da bırakabilirsin.")
+            if bc and db.one("SELECT id FROM products WHERE business_id = ? AND barcode = ? AND id <> ?",
+                             (g.biz["id"], bc, product_id or 0)):
+                raise ValueError("Bu barkod başka bir üründe kayıtlı.")
+            values["barcode"] = bc or None
             photo = request.files.get("photo")
             if photo and photo.filename:
                 values["image_id"] = save_image(photo, g.biz["id"])
@@ -499,13 +507,17 @@ def product_form(product_id=None):
                 if values["stock"] is not None:
                     _log_form_stock(pid, None, None, values["stock"])
             _save_variants(pid, new_variants)
+            if bc:
+                img = values.get("image_id", (p or {}).get("image_id"))
+                cat = db.one("SELECT name FROM categories WHERE id = ?", (values["category_id"],)) if values["category_id"] else None
+                bulk.catalog_learn(bc, name, values["unit"], cat["name"] if cat else "", img, commit=False)
             db.commit()
             flash("Ürün kaydedildi.", "ok")
             return redirect(url_for("panel.products") + f"#p{pid}")
         except ValueError as e:
             db.rollback()
             flash(str(e), "error")
-        p = {**(p or {}), **{k: f.get(k, "") for k in ("name", "description", "unit", "price", "stock", "dealer_price")},
+        p = {**(p or {}), **{k: f.get(k, "") for k in ("name", "description", "unit", "price", "stock", "dealer_price", "barcode")},
              "available": bool(f.get("available")), "visible": bool(f.get("visible")),
              "category_id": f.get("category_id", type=int), "image_id": (p or {}).get("image_id"), "id": product_id}
         dps = f.getlist("v_dprice") + [""] * 50
@@ -1348,3 +1360,164 @@ def dealer_prices(dealer_id):
                                   "GROUP BY d.id, d.name ORDER BY d.name", (bid, d["id"]))]
     return render_template("panel/dealer_prices.html", active="dealers", d=d, rows=rows, others=others,
                            n_special=len(special), pct=dealers.pct_text(dealers.discount_pct(d)))
+
+
+# ── Toplu ürün girişi: Excel, hazır liste, hızlı ekleme, barkod ────────────────
+
+@bp.route("/products/import", methods=["GET", "POST"])
+@login_required
+def products_import():
+    if request.method == "POST":
+        f = request.files.get("file")
+        if not f or not f.filename:
+            flash("Yüklenecek dosyayı seçer misin?", "error")
+            return redirect(url_for("panel.products_import"))
+        data = f.read(8 * 1024 * 1024 + 1)
+        if len(data) > 8 * 1024 * 1024:
+            flash("Dosya 8 MB'tan büyük. Sadece barkod, ad ve fiyat sütunlarını bırakıp tekrar dener misin?", "error")
+            return redirect(url_for("panel.products_import"))
+        try:
+            rows = bulk.read_table(f.filename, data)
+        except bulk.ImportError_ as e:
+            flash(str(e), "error")
+            return redirect(url_for("panel.products_import"))
+        jid = bulk.save_job(g.biz["id"], f.filename, rows)
+        return redirect(url_for("panel.products_import_map", job_id=jid))
+    return render_template("panel/import.html", active="products")
+
+
+@bp.route("/products/import/<int:job_id>", methods=["GET", "POST"])
+@login_required
+def products_import_map(job_id):
+    job, rows = bulk.load_job(g.biz["id"], job_id)
+    if not job:
+        flash("Yükleme bulunamadı ya da süresi doldu; dosyayı tekrar yükler misin?", "error")
+        return redirect(url_for("panel.products_import"))
+    has_header, mapping = bulk.guess_mapping(rows)
+    if request.method == "POST":
+        f = request.form
+        has_header = bool(f.get("has_header"))
+        mapping = {}
+        for field in bulk.FIELDS:
+            v = f.get(f"col_{field}", "")
+            if v.isdigit():
+                mapping[field] = int(v)
+        try:
+            res = bulk.import_rows(g.biz["id"], rows, mapping, has_header=has_header,
+                                   update_existing=bool(f.get("update_existing")), hide_new=bool(f.get("hide_new")))
+        except (bulk.ImportError_, core.OrderError) as e:
+            flash(str(e), "error")
+        else:
+            db.execute("DELETE FROM import_jobs WHERE id = ?", (job_id,))
+            db.commit()
+            return render_template("panel/import_done.html", active="products", res=res)
+    head = rows[0]
+    sample = rows[1:9] if has_header else rows[:8]
+    return render_template("panel/import_map.html", active="products", job=job, head=head, sample=sample,
+                           has_header=has_header, mapping=mapping, FIELDS=bulk.FIELDS, total=len(rows) - (1 if has_header else 0),
+                           width=len(head))
+
+
+@bp.route("/products/starter", methods=["GET", "POST"])
+@login_required
+def products_starter():
+    import starter
+    key = request.args.get("paket", "market")
+    pack = starter.pack_items(key)
+    if pack is None:
+        abort(404)
+    if request.method == "POST":
+        flat = starter.flat(key)
+        items = []
+        for n, (cat, name, unit) in flat.items():
+            price = (request.form.get(f"p{n}") or "").strip()
+            if price:
+                items.append({"name": (request.form.get(f"n{n}") or name).strip(), "unit": unit, "category": cat,
+                              "price": price})
+        if not items:
+            flash("Satacağın ürünlerin fiyatını yazar mısın? Fiyatı boş olanlar eklenmez.", "error")
+            return redirect(url_for("panel.products_starter", paket=key))
+        added, updated, errors = bulk.save_simple(g.biz["id"], items, source="starter")
+        for e in errors[:8]:
+            flash(e, "error")
+        flash(f"{added} ürün eklendi" + (f", {updated} ürünün fiyatı güncellendi" if updated else "") +
+              ". Fotoğraf eklemek için ürüne dokunabilirsin.", "ok")
+        return redirect(url_for("panel.products"))
+    have = {(p["name"].strip().lower(), (p["unit"] or "").strip().lower()): p for p in
+            db.query("SELECT name, unit, price FROM products WHERE business_id = ?", (g.biz["id"],))}
+    return render_template("panel/starter.html", active="products", pack=pack, info=starter.PACKS[key], key=key,
+                           have=have)
+
+
+@bp.route("/products/quick", methods=["GET", "POST"])
+@login_required
+def products_quick():
+    cats = db.query("SELECT * FROM categories WHERE business_id = ? ORDER BY position, id", (g.biz["id"],))
+    if request.method == "POST":
+        f = request.form
+        items = [{"name": n, "price": pr, "unit": u, "category": c, "barcode": b, "stock": st}
+                 for n, pr, u, c, b, st in zip(f.getlist("name"), f.getlist("price"), f.getlist("unit"),
+                                               f.getlist("category"), f.getlist("barcode"), f.getlist("stock"))]
+        added, updated, errors = bulk.save_simple(g.biz["id"], items)
+        if errors:
+            for e in errors[:10]:
+                flash(e, "error")
+            if not added and not updated:
+                return render_template("panel/quick.html", active="products", cats=cats, rows=items)
+        flash(f"{added} ürün eklendi" + (f", {updated} ürün güncellendi" if updated else "") + ".", "ok")
+        return redirect(url_for("panel.products_quick") if f.get("more") else url_for("panel.products"))
+    return render_template("panel/quick.html", active="products", cats=cats, rows=[])
+
+
+@bp.get("/products/lookup")
+@login_required
+def products_lookup():
+    if rate_limited(f"lookup:{g.biz['id']}", 600, 3600):
+        return jsonify(error="Çok fazla sorgu yapıldı, biraz sonra tekrar dener misin?"), 429
+    res = bulk.lookup(g.biz["id"], request.args.get("barcode"), remote=request.args.get("remote") != "0")
+    return jsonify(res)
+
+
+@bp.route("/products/scan", methods=["GET", "POST"])
+@login_required
+def products_scan():
+    cats = db.query("SELECT * FROM categories WHERE business_id = ? ORDER BY position, id", (g.biz["id"],))
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        bc = bulk._clean_barcode(data.get("barcode"))
+        if not bc:
+            return jsonify(ok=False, error="Barkod okunamadı."), 400
+        price = bulk._price(data.get("price"))
+        if price is None:
+            return jsonify(ok=False, error="Fiyatı yazar mısın? (ör. 24,50)"), 400
+        p = db.one("SELECT * FROM products WHERE business_id = ? AND barcode = ?", (g.biz["id"], bc))
+        try:
+            if p:
+                ch = {"price": str(price)}
+                if (data.get("name") or "").strip():
+                    ch["name"] = " ".join(data["name"].split())[:100]
+                db.update("products", p["id"], ch)
+                st = str(data.get("stock") or "").strip()
+                if st:
+                    core.adjust_stock(g.biz["id"], p["id"], None, "set", st, "Barkodla sayım", current_user()["id"],
+                                      commit=False)
+                db.commit()
+                return jsonify(ok=True, updated=True, id=p["id"], name=ch.get("name", p["name"]), price=str(price))
+            name = " ".join(str(data.get("name") or "").split())[:100]
+            if len(name) < 2:
+                return jsonify(ok=False, error="Ürün adını yazar mısın?"), 400
+            cat = db.one("SELECT name FROM categories WHERE id = ? AND business_id = ?",
+                         (data.get("category_id") or 0, g.biz["id"]))
+            added, updated, errors = bulk.save_simple(g.biz["id"], [{
+                "name": name, "price": str(price), "unit": data.get("unit") or "", "barcode": bc,
+                "category": (data.get("category") or "").strip() or (cat["name"] if cat else ""),
+                "stock": data.get("stock") or "", "image_id": None}])
+        except core.OrderError as e:
+            db.rollback()
+            return jsonify(ok=False, error=str(e)), 400
+        if errors:
+            return jsonify(ok=False, error=errors[0]), 400
+        p = db.one("SELECT id FROM products WHERE business_id = ? AND barcode = ?", (g.biz["id"], bc))
+        return jsonify(ok=True, updated=False, id=p["id"] if p else None, name=name, price=str(price))
+    n = db.one("SELECT COUNT(*) AS n FROM products WHERE business_id = ? AND barcode IS NOT NULL", (g.biz["id"],))["n"]
+    return render_template("panel/scan.html", active="products", cats=cats, n_barcoded=n)

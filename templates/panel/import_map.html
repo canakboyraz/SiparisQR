@@ -1,0 +1,30 @@
+{% extends "panel/layout.html" %}
+{% block ptitle %}Sütunları kontrol et{% endblock %}
+{% block content %}
+<a class="pn-back" href="{{ url_for('panel.products_import') }}">← Başka dosya</a>
+<h1>Sütunları kontrol et</h1>
+<p class="muted">{{ job.filename }} · {{ total }} satır. Hangi sütunun ne olduğunu tahmin ettik; yanlışsa düzelt.</p>
+<form method="post" class="card form">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <div class="imp-map">
+    {% for key, label in FIELDS.items() %}
+    <label class="fld"><span>{{ label }}{% if key in ('name', 'price') %} *{% endif %}</span>
+      <select name="col_{{ key }}" data-field="{{ key }}">
+        <option value="">— yok —</option>
+        {% for i in range(width) %}<option value="{{ i }}" {% if mapping.get(key) == i %}selected{% endif %}>{{ (head[i] if has_header and head[i] else (i + 1)|string ~ '. sütun') }}{% if not has_header or not head[i] %}: {{ head[i][:20] }}{% endif %}</option>{% endfor %}
+      </select></label>
+    {% endfor %}
+  </div>
+  <label class="check"><input type="checkbox" name="has_header" value="1" {% if has_header %}checked{% endif %}> İlk satır başlık (ürün değil)</label>
+  <label class="check"><input type="checkbox" name="update_existing" value="1" checked> Zaten olan ürünlerin fiyatını güncelle (barkod, yoksa ad ile eşleşir)</label>
+  <label class="check"><input type="checkbox" name="hide_new" value="1"> Yeni ürünleri gizli ekle (kontrol edip sonra açarım)</label>
+
+  <h2>Önizleme</h2>
+  <div class="imp-prev"><table>
+    <thead><tr>{% for key, label in FIELDS.items() %}{% if key in mapping %}<th>{{ label }}</th>{% endif %}{% endfor %}</tr></thead>
+    <tbody>{% for r in sample %}<tr>{% for key, label in FIELDS.items() %}{% if key in mapping %}<td>{{ r[mapping[key]] if mapping[key] < r|length else '' }}</td>{% endif %}{% endfor %}</tr>{% endfor %}</tbody>
+  </table></div>
+  <p class="muted"><small>Önizleme ilk tahmine göre. Sütun seçimini değiştirirsen yükleme yeni seçimle yapılır.</small></p>
+  <button class="btn-primary btn-big" type="submit">{{ total }} satırı yükle</button>
+</form>
+{% endblock %}

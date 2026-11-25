@@ -559,7 +559,7 @@ def _log_stock(biz_id, product_id, variant_id, kind, delta, order_id=None, note=
                                   "created_at": now()})
 
 
-def adjust_stock(biz_id, product_id, variant_id, kind, qty, note="", user_id=None):
+def adjust_stock(biz_id, product_id, variant_id, kind, qty, note="", user_id=None, commit=True):
     """Elle stok işlemi. kind: in (+qty), out (-qty), set (= qty), off (sınırsız yap). Döner: yeni stok."""
     table, rid = ("product_variants", variant_id) if variant_id else ("products", product_id)
     row = db.one(f"SELECT stock FROM {table} WHERE id = ? AND business_id = ?", (rid, biz_id))
@@ -594,7 +594,8 @@ def adjust_stock(biz_id, product_id, variant_id, kind, qty, note="", user_id=Non
     delta = new - (old or 0)
     db.execute(f"UPDATE {table} SET stock = ? WHERE id = ?", (new, rid))
     _log_stock(biz_id, product_id, variant_id, kind, delta, note=note, user_id=user_id)
-    db.commit()
+    if commit:
+        db.commit()
     return new
 
 

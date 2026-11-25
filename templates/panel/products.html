@@ -2,15 +2,23 @@
 {% block ptitle %}Ürünler{% endblock %}
 {% block content %}
 <div class="pn-head"><h1>Ürünler</h1><a class="btn-primary" href="{{ url_for('panel.product_form') }}">+ Ürün ekle</a></div>
+<nav class="pr-tools">
+  <a href="{{ url_for('panel.products_scan') }}"><span>📷</span>Barkodla</a>
+  <a href="{{ url_for('panel.products_quick') }}"><span>⚡</span>Hızlı ekle</a>
+  <a href="{{ url_for('panel.products_import') }}"><span>📥</span>Excel'den</a>
+  <a href="{{ url_for('panel.products_starter') }}"><span>📋</span>Hazır liste</a>
+</nav>
 {% if not groups %}
-<div class="pn-empty"><p><b>Henüz ürün yok.</b></p><p>İlk ürününü ekle: adı, fiyatı, birimi (ör. 1 kg, 500 ml) ve bir fotoğraf yeter.</p></div>
+<div class="pn-empty"><p><b>Henüz ürün yok.</b></p><p>Tek tek ekleyebilir ya da yukarıdan çok ürünü bir kerede girebilirsin: satış programından aldığın <b>Excel</b>, <b>hazır liste</b> (tik at, fiyat yaz) ya da <b>barkod okutarak</b>.</p></div>
+{% else %}
+<input class="pr-search" id="pr-search" type="search" placeholder="Ürün ara ({{ groups|sum(attribute='1', start=[])|length }} ürün)" aria-label="Ürün ara" autocomplete="off">
 {% endif %}
 {% for cat, items in groups %}
-<section class="card">
+<section class="card pr-group">
   <h2>{{ cat.name }} <small class="muted">· {{ items|length }} ürün</small></h2>
   <ul class="pl">
     {% for p in items %}
-    <li id="p{{ p.id }}" class="{{ 'is-hidden' if not p.visible }} {{ 'is-out' if not p.available }}">
+    <li id="p{{ p.id }}" data-q="{{ (p.name ~ ' ' ~ (p.barcode or '') ~ ' ' ~ (p.unit or ''))|lower }}" class="{{ 'is-hidden' if not p.visible }} {{ 'is-out' if not p.available }}">
       <a class="pl-main" href="{{ url_for('panel.product_form', product_id=p.id) }}">
         {% if p.image_id %}<img src="/img/{{ p.image_id }}" alt="" loading="lazy">{% else %}<span class="pl-noimg">{{ p.name[:1]|upper }}</span>{% endif %}
         {% set vs = vmap.get(p.id, []) %}
@@ -55,4 +63,22 @@
     <button class="btn-sm" name="action" value="add" type="submit">Ekle</button>
   </form>
 </section>
+<script>
+(function () {
+  var box = document.getElementById("pr-search");
+  if (!box) return;
+  var fold = function (t) { return t.toLocaleLowerCase("tr").replace(/ı/g, "i").normalize("NFD").replace(/[\u0300-\u036f]/g, ""); };
+  box.addEventListener("input", function () {
+    var q = fold(box.value.trim());
+    document.querySelectorAll(".pr-group").forEach(function (sec) {
+      var any = false;
+      sec.querySelectorAll("li[data-q]").forEach(function (li) {
+        var hit = !q || fold(li.getAttribute("data-q")).indexOf(q) >= 0;
+        li.hidden = !hit; if (hit) any = true;
+      });
+      sec.hidden = !any;
+    });
+  });
+})();
+</script>
 {% endblock %}

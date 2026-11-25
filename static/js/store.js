@@ -348,4 +348,23 @@
   }
 
   render();
+
+  // Çok ürünlü mağaza: arama
+  var sb = $("st-search");
+  if (sb) {
+    var fold = function (t) { return t.toLocaleLowerCase("tr").replace(/ı/g, "i").normalize("NFD").replace(/[\u0300-\u036f]/g, ""); };
+    sb.addEventListener("input", function () {
+      var q = fold(sb.value.trim()), total = 0;
+      document.querySelectorAll(".st-cat").forEach(function (sec) {
+        var any = 0;
+        sec.querySelectorAll(".st-item[data-q]").forEach(function (it) {
+          var hit = !q || q.split(/\s+/).every(function (w) { return fold(it.getAttribute("data-q")).indexOf(w) >= 0; });
+          it.hidden = !hit; if (hit) any++;
+        });
+        sec.hidden = !any; total += any;
+      });
+      var nr = $("st-noresult"); if (nr) nr.hidden = total > 0;
+      var nav = document.querySelector(".st-cats"); if (nav) nav.hidden = !!q;
+    });
+  }
 })();

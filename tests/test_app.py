@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import core  # noqa: E402
 import db  # noqa: E402
 import dealers  # noqa: E402
+import bulk  # noqa: E402
 import webpush  # noqa: E402
 
 IBAN = "TR330006100519786457841326"   # geçerli örnek IBAN (mod 97)
@@ -1440,3 +1441,134 @@ def test_dealer_special_prices(app):
     assert not dealers.special_prices(d1["id"])
     # Başka işletmenin bayisinin fiyat sayfası açılmaz
     assert c.get("/panel/dealers/99999/prices").status_code == 404
+
+
+def _xlsx(rows):
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    for r in rows:
+        ws.append(r)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_bulk_excel_import(app):
+    import io as _io
+    c, biz, (p1, p2, p3), t = _owner(app)
+    data = _xlsx([["Barkod", "Stok Adı", "Alış Fiyatı", "Satış Fiyatı", "Grup", "Birim", "Miktar"],
+                  [8690504012345, "Pınar Süt 1 L", 30, 42.5, "Süt Ürünleri", "1 L", 24],
+                  [8690000000017, "Ülker Çikolatalı Gofret", 8, "12,75", "Atıştırmalık", "36 g", None],
+                  [None, "Ekmek", 8, 10, "Fırın", "adet", None],
+                  [None, "Fiyatsız Ürün", 5, None, "Fırın", "", None],
+                  [None, "", 1, 2, "", "", None]])
+    r = c.post("/panel/products/import", data={"csrf": t, "file": (_io.BytesIO(data), "liste.xlsx")},
+               content_type="multipart/form-data")
+    assert r.status_code == 302 and "/panel/products/import/" in r.headers["Location"]
+    page = c.get(r.headers["Location"]).get_data(as_text=True)
+    assert "Pınar Süt 1 L" in page and "5 satırı yükle" in page
+    jid = int(r.headers["Location"].rstrip("/").split("/")[-1])
+    job, rows = bulk.load_job(biz["id"], jid)
+    has_header, mapping = bulk.guess_mapping(rows)
+    # Alış fiyatı değil satış fiyatı; Stok Adı ad, Miktar stok
+    assert has_header and mapping == {"barcode": 0, "price": 3, "name": 1, "category": 4, "unit": 5, "stock": 6}
+    form = {"csrf": t, "has_header": "1", "update_existing": "1"}
+    form.update({f"col_{k}": str(v) for k, v in mapping.items()})
+    r = c.post(f"/panel/products/import/{jid}", data=form)
+    html = r.get_data(as_text=True)
+    assert "Yükleme tamamlandı" in html and "Fiyatsız Ürün: fiyat okunamadı" in html and "ürün adı boş" in html
+    milk = db.one("SELECT * FROM products WHERE business_id = ? AND barcode = '8690504012345'", (biz["id"],))
+    assert milk["name"] == "Pınar Süt 1 L" and core.money(milk["price"]) == core.money("42.5") and milk["stock"] == 24
+    cat = db.one("SELECT name FROM categories WHERE id = ?", (milk["category_id"],))
+    assert cat["name"] == "Süt Ürünleri"
+    wafer = db.one("SELECT * FROM products WHERE barcode = '8690000000017'")
+    assert core.money(wafer["price"]) == core.money("12.75")
+    # Ortak kataloğa öğrenildi
+    assert bulk.catalog_get("8690504012345")["name"] == "Pınar Süt 1 L"
+
+    # Aynı barkodla CSV (noktalı virgül, cp1254) tekrar yükleyince fiyat güncellenir, kopya oluşmaz
+    csvdata = "Barkod;Ürün Adı;Satış Fiyatı\n8690504012345;Pınar Süt 1 Litre;44,90\n8691111111116;Yeni Ürün;5\n".encode("cp1254")
+    r = c.post("/panel/products/import", data={"csrf": t, "file": (_io.BytesIO(csvdata), "liste.csv")},
+               content_type="multipart/form-data")
+    jid = int(r.headers["Location"].rstrip("/").split("/")[-1])
+    r = c.post(f"/panel/products/import/{jid}", data={"csrf": t, "has_header": "1", "update_existing": "1",
+                                                      "col_barcode": "0", "col_name": "1", "col_price": "2"})
+    html = r.get_data(as_text=True)
+    assert db.one("SELECT COUNT(*) AS n FROM products WHERE barcode = '8690504012345'")["n"] == 1
+    assert core.money(db.one("SELECT price FROM products WHERE barcode = '8690504012345'")["price"]) == core.money("44.90")
+    assert "Yeni Ürün" in [p["name"] for p in db.query("SELECT name FROM products WHERE business_id = ?", (biz["id"],))]
+    # Eski .xls ve bozuk dosya: anlaşılır hata
+    r = c.post("/panel/products/import", data={"csrf": t, "file": (_io.BytesIO(b"\xd0\xcf\x11\xe0garbage"), "eski.xls")},
+               content_type="multipart/form-data", follow_redirects=True)
+    assert ".xlsx" in r.get_data(as_text=True)
+
+
+def test_bulk_starter_quick_scan_catalog(app, monkeypatch):
+    c, biz, (p1, p2, p3), t = _owner(app)
+    page = c.get("/panel/products/starter").get_data(as_text=True)
+    assert "Ekmek" in page and "Yumurta" in page and "30&#39;lu" in page
+    import starter
+    flat = starter.flat("market")
+    idx = {(name, unit): n for n, (cat, name, unit) in flat.items()}
+    r = c.post("/panel/products/starter", data={"csrf": t, f"p{idx[('Süt', '1 L')]}": "42", f"p{idx[('Süt', '1/2 L')]}": "24",
+               f"n{idx[('Ekmek', '1 adet')]}": "Ekmek (250 g)", f"p{idx[('Ekmek', '1 adet')]}": "10"}, follow_redirects=True)
+    assert "3 ürün eklendi" in r.get_data(as_text=True)
+    milks = db.query("SELECT * FROM products WHERE business_id = ? AND name = 'Süt' ORDER BY unit", (biz["id"],))
+    assert len(milks) == 2 and {m["unit"] for m in milks} == {"1 L", "1/2 L"}
+    assert db.one("SELECT * FROM products WHERE name = 'Ekmek (250 g)'")
+    r = c.post("/panel/products/starter", data={"csrf": t}, follow_redirects=True)
+    assert "fiyatını yaz" in r.get_data(as_text=True)
+
+    # Hızlı ekleme
+    r = c.post("/panel/products/quick", data={"csrf": t, "name": ["Domates", "Çay 1 kg", "", "Hatalı"],
+               "price": ["35", "320", "", "abc"], "unit": ["1 kg", "", "", ""], "category": ["Manav", "İçecek", "", ""],
+               "barcode": ["", "8690000000024", "", ""], "stock": ["", "10", "", ""]}, follow_redirects=True)
+    html = r.get_data(as_text=True)
+    assert "2 ürün eklendi" in html and "Hatalı: fiyat eksik" in html
+    tea = db.one("SELECT * FROM products WHERE barcode = '8690000000024'")
+    assert tea["stock"] == 10 and db.one("SELECT name FROM categories WHERE id = ?", (tea["category_id"],))["name"] == "İçecek"
+
+    # Barkod sorgu: kendi mağazasında var
+    js = c.get("/panel/products/lookup?barcode=8690000000024&remote=0").get_json()
+    assert js["existing"]["name"] == "Çay 1 kg"
+    # Başka bir işletme aynı barkodu okutunca ortak katalogdan ad gelir
+    other = app.test_client()
+    make_biz(other, name="Köşe Bakkal", slug="kose-bakkal", email="b@b.com")
+    login(other, "b@b.com", "sahip12345")
+    t2 = csrf(other, "/panel/orders")
+    js = other.get("/panel/products/lookup?barcode=8690000000024&remote=0").get_json()
+    assert js["existing"] is None and js["suggest"]["name"] == "Çay 1 kg"
+    # Katalogda yok -> Open Food Facts (sahte)
+    monkeypatch.setattr(bulk, "off_lookup", lambda bc, timeout=4: {"name": "Eti Burçak", "unit": "131 g", "brand": "Eti"})
+    js = other.get("/panel/products/lookup?barcode=8690526000002").get_json()
+    assert js["suggest"]["name"] == "Eti Burçak" and js["suggest"]["source"] == "off"
+    # Barkodla kaydet (JSON + CSRF başlığı)
+    r = other.post("/panel/products/scan", data=json.dumps({"barcode": "8690526000002", "name": "Eti Burçak",
+                   "price": "27,50", "unit": "131 g"}), content_type="application/json", headers={"X-CSRF-Token": t2})
+    assert r.get_json()["ok"] and not r.get_json()["updated"]
+    # Bakkalın yazdığı ad katalogda kalıcı olur (kaynak: işletme)
+    assert bulk.catalog_get("8690526000002")["source"] == "shop"
+    # Tekrar okutup fiyat + stok güncelle
+    r = other.post("/panel/products/scan", data=json.dumps({"barcode": "8690526000002", "price": "29", "stock": "12"}),
+                   content_type="application/json", headers={"X-CSRF-Token": t2})
+    assert r.get_json()["updated"]
+    pp = db.one("SELECT * FROM products WHERE barcode = '8690526000002'")
+    assert core.money(pp["price"]) == core.money("29") and pp["stock"] == 12
+    # CSRF olmadan reddedilir; fiyat zorunlu
+    assert other.post("/panel/products/scan", data=json.dumps({"barcode": "8690526000002", "price": "1"}),
+                      content_type="application/json").status_code in (400, 403)
+    r = other.post("/panel/products/scan", data=json.dumps({"barcode": "8690000000031", "name": "X Ürün"}),
+                   content_type="application/json", headers={"X-CSRF-Token": t2})
+    assert not r.get_json()["ok"] and "Fiyat" in r.get_json()["error"]
+    # Ürün formunda barkod; başka üründe kayıtlı barkod reddedilir
+    r = c.post(f"/panel/products/{p1}", data={"csrf": t, "name": "Siyah Zeytin", "price": "350", "barcode": "8690000000024",
+               "available": "1", "visible": "1"}, follow_redirects=True)
+    assert "başka bir üründe" in r.get_data(as_text=True)
+    # Ürünler sayfası araçları ve mağazada arama (15+ ürün)
+    page = c.get("/panel/products").get_data(as_text=True)
+    assert "Barkodla" in page and "Excel" in page and "Hazır liste" in page and 'id="pr-search"' in page
+    for i in range(12):
+        db.insert("products", {"business_id": biz["id"], "name": f"Ürün {i}", "price": "5", "created_at": core.now()})
+    db.commit()
+    assert 'id="st-search"' in app.test_client().get("/s/ege-zeytin/").get_data(as_text=True)
